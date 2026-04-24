@@ -1,0 +1,3 @@
+User-agent: *
+Allow: /
+Sitemap: https://findmyrhyme.com/sitemap.xml
