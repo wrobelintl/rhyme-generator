@@ -47,7 +47,7 @@
 <body>
 
 <header>
-  <h1>🎵 Rhyme Generator</h1>
+  <h1> Rhyme Generator</h1>
   <p>Find perfect rhymes for any word — free, instant, no sign-up</p>
 </header>
 
@@ -67,7 +67,7 @@
     </div>
 
     <div class="results" id="results">
-      <div class="empty">Enter a word above to find rhymes ✨</div>
+      <div class="empty">Enter a word above to find rhymes </div>
     </div>
   </div>
 
@@ -143,7 +143,7 @@ const rhymeDB = {
 function countSyllables(word) {
   word = word.toLowerCase();
   if (word.length <= 3) return 1;
-  word = word.replace(/(?:[^laeiouy]es|ed|[^laeiouy]e)$/, '');
+  word = word.replace(/(?:[^laeiouy]esed[^laeiouy]e)$/, '');
   word = word.replace(/^y/, '');
   const matches = word.match(/[aeiouy]{1,2}/g);
   return matches ? Math.max(1, matches.length) : 1;
@@ -153,7 +153,7 @@ function getEnding(word) {
   word = word.toLowerCase();
   for (let len = Math.min(5, word.length); len >= 2; len--) {
     const ending = word.slice(-len);
-    if (rhymeDB[ending] || rhymeDB[ending+'2'] || rhymeDB[ending+'3']) return ending;
+    if (rhymeDB[ending]  rhymeDB[ending+'2']  rhymeDB[ending+'3']) return ending;
   }
   return null;
 }
@@ -177,7 +177,7 @@ function findRhymes() {
 
   // Match against DB
   Object.entries(rhymeDB).forEach(([key, words]) => {
-    if (key.replace(/[0-9]/g,'') === wEnding || key.replace(/[0-9]/g,'') === word.slice(-4) || key.replace(/[0-9]/g,'') === word.slice(-2)) {
+    if (key.replace(/[0-9]/g,'') === wEnding  key.replace(/[0-9]/g,'') === word.slice(-4)  key.replace(/[0-9]/g,'') === word.slice(-2)) {
       rhymes = [...rhymes, ...words];
     }
   });
