@@ -1,0 +1,228 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Rhyme Generator — Find Rhyming Words Instantly</title>
+  <meta name="description" content="Find rhyming words instantly with our free online rhyme generator. Perfect for poets, songwriters, teachers, and students. Type any word and get rhymes in seconds.">
+  <meta name="keywords" content="rhyme generator, rhyming words, find rhymes, online rhyme tool, words that rhyme, poem rhyme finder">
+  <link rel="canonical" href="https://findmyrhyme.com/">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); min-height: 100vh; }
+    header { color: white; padding: 1.5rem 1.5rem 0.5rem; text-align: center; }
+    header h1 { font-size: 1.8rem; font-weight: 800; letter-spacing: -0.5px; }
+    header p { opacity: 0.9; font-size: 0.95rem; margin-top: 0.35rem; }
+    main { max-width: 720px; margin: 1.5rem auto; padding: 0 1rem 3rem; }
+    .card { background: white; border-radius: 16px; padding: 2rem; box-shadow: 0 8px 40px rgba(0,0,0,0.15); margin-bottom: 1.5rem; }
+    .input-row { display: flex; gap: 0.75rem; }
+    input[type="text"] {
+      flex: 1; padding: 0.9rem 1.25rem; border: 2px solid #e2e8f0;
+      border-radius: 10px; font-size: 1.15rem; transition: border-color 0.2s;
+    }
+    input[type="text"]:focus { outline: none; border-color: #667eea; }
+    .btn { padding: 0.9rem 1.5rem; background: #667eea; color: white; border: none; border-radius: 10px; font-size: 1rem; font-weight: 700; cursor: pointer; transition: background 0.2s; white-space: nowrap; }
+    .btn:hover { background: #5a67d8; }
+    .filter-row { display: flex; gap: 0.5rem; margin-top: 1rem; flex-wrap: wrap; align-items: center; }
+    .filter-label { font-size: 0.85rem; color: #718096; }
+    .filter-btn { padding: 0.3rem 0.85rem; border-radius: 99px; border: 2px solid #e2e8f0; background: white; font-size: 0.82rem; cursor: pointer; font-weight: 600; color: #4a5568; transition: all 0.15s; }
+    .filter-btn.active { background: #667eea; border-color: #667eea; color: white; }
+    .results { margin-top: 1.5rem; }
+    .syllable-group { margin-bottom: 1.25rem; }
+    .syllable-label { font-size: 0.78rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; color: #718096; margin-bottom: 0.5rem; }
+    .rhyme-grid { display: flex; flex-wrap: wrap; gap: 0.4rem; }
+    .rhyme-word { padding: 0.4rem 0.85rem; background: #f7fafc; border: 1px solid #e2e8f0; border-radius: 99px; font-size: 0.9rem; color: #2d3748; cursor: pointer; transition: all 0.15s; }
+    .rhyme-word:hover { background: #667eea; color: white; border-color: #667eea; }
+    .empty { color: #a0aec0; font-size: 0.95rem; text-align: center; padding: 2rem; }
+    .content-section { color: #4a5568; line-height: 1.7; }
+    .content-section h2 { color: #2d3748; font-size: 1rem; margin: 1.25rem 0 0.4rem; }
+    .content-section ul { padding-left: 1.25rem; }
+    .content-section li { margin-bottom: 0.3rem; }
+    .faq-item { border-top: 1px solid #e2e8f0; padding: 0.85rem 0; }
+    .faq-q { font-weight: 600; color: #2d3748; margin-bottom: 0.25rem; font-size: 0.9rem; }
+    footer { text-align: center; padding: 1.5rem; color: rgba(255,255,255,0.7); font-size: 0.82rem; }
+    footer a { color: rgba(255,255,255,0.7); margin: 0 0.5rem; }
+  </style>
+</head>
+<body>
+
+<header>
+  <h1>🎵 Rhyme Generator</h1>
+  <p>Find perfect rhymes for any word — free, instant, no sign-up</p>
+</header>
+
+<main>
+  <div class="card">
+    <div class="input-row">
+      <input type="text" id="wordInput" placeholder="Enter a word (e.g. moon, love, day)..." onkeydown="if(event.key==='Enter')findRhymes()">
+      <button class="btn" onclick="findRhymes()">Find Rhymes</button>
+    </div>
+
+    <div class="filter-row">
+      <span class="filter-label">Filter by syllables:</span>
+      <button class="filter-btn active" onclick="filterBy('all', this)">All</button>
+      <button class="filter-btn" onclick="filterBy(1, this)">1 syllable</button>
+      <button class="filter-btn" onclick="filterBy(2, this)">2 syllables</button>
+      <button class="filter-btn" onclick="filterBy(3, this)">3 syllables</button>
+    </div>
+
+    <div class="results" id="results">
+      <div class="empty">Enter a word above to find rhymes ✨</div>
+    </div>
+  </div>
+
+  <div class="card content-section">
+    <h2>How to Use the Rhyme Generator</h2>
+    <p>Type any word into the search box and click "Find Rhymes." Results are grouped by syllable count so you can quickly find the perfect rhyme for your poem, song, or creative writing.</p>
+
+    <h2>Who Uses a Rhyme Generator?</h2>
+    <ul>
+      <li><strong>Songwriters</strong> — finding lyrics that flow naturally</li>
+      <li><strong>Poets</strong> — discovering unexpected rhyme connections</li>
+      <li><strong>Teachers &amp; Students</strong> — exploring phonics and language patterns</li>
+      <li><strong>Rappers &amp; Spoken word artists</strong> — building rhyme schemes quickly</li>
+      <li><strong>Writers</strong> — adding rhythm to prose or speeches</li>
+    </ul>
+
+    <h2>Types of Rhymes</h2>
+    <ul>
+      <li><strong>Perfect rhymes</strong> — words that end with the same sound (cat/hat)</li>
+      <li><strong>Near rhymes</strong> — words with similar but not identical endings (moon/June)</li>
+      <li><strong>Eye rhymes</strong> — words that look alike but sound different (love/move)</li>
+      <li><strong>Multi-syllable rhymes</strong> — longer rhyming matches (beautiful/dutiful)</li>
+    </ul>
+
+    <div style="margin-top:1rem">
+      <div class="faq-item">
+        <div class="faq-q">How does the rhyme generator work?</div>
+        <div style="font-size:0.9rem">The tool matches words based on their ending phoneme patterns — the sounds at the end of the word. It groups results by syllable count to help you find rhymes that fit your rhythm.</div>
+      </div>
+      <div class="faq-item">
+        <div class="faq-q">Is it free?</div>
+        <div style="font-size:0.9rem">Yes, completely free. No sign-up, no limits, no ads interrupting your creative flow.</div>
+      </div>
+      <div class="faq-item">
+        <div class="faq-q">Can I use this for Wordle or word games?</div>
+        <div style="font-size:0.9rem">Yes — finding words with specific endings is very useful for word games that require pattern matching.</div>
+      </div>
+    </div>
+  </div>
+</main>
+
+<footer>
+  © 2026 FindMyRhyme.com — Free rhyme generator for poets and songwriters
+  <span style="display:block;margin-top:0.35rem"><a href="/privacy.html">Privacy Policy</a> · <a href="/terms.html">Terms of Use</a></span>
+</footer>
+
+<script>
+// Rhyme database — common word endings mapped to word lists
+const rhymeDB = {
+  "ay": ["day","say","way","play","stay","may","pay","ray","bay","clay","gray","hay","lay","pray","sway","tray","spray","display","delay","relay","okay","away","today","birthday","doorway","runway","subway","gateway","halfway","Monday","Sunday"],
+  "ight": ["night","light","right","fight","might","sight","tight","bright","flight","quite","white","write","bite","cite","kite","mite","delight","tonight","upright","midnight","twilight","moonlight","sunlight","daylight","highlight","insight","website"],
+  "ove": ["love","dove","above","shove","glove","of","thereof"],
+  "oon": ["moon","soon","tune","june","boon","croon","goon","loon","noon","rune","spoon","swoon","cartoon","balloon","cocoon","monsoon","platoon","bassoon","lagoon","harpoon","honeymoon","afternoon"],
+  "ive": ["live","give","drive","five","hive","dive","jive","strive","thrive","arrive","survive","contrive","alive","derive","deprive"],
+  "ove2": ["stove","wove","grove","clove","dove","cove","trove","rove","drove","strove"],
+  "eat": ["beat","heat","meet","neat","seat","feat","feet","greet","sheet","street","sweet","treat","wheat","cheat","fleet","sleet","repeat","compete","delete","complete","defeat","retreat","concrete","athlete","heartbeat","offbeat"],
+  "ong": ["song","long","strong","wrong","belong","along","prolong","among","throng","gong","prong","Hong","Kong","lifelong","singsong","headstrong"],
+  "ight2": ["write","site","kite","bite","quite","white","night","right","light","fight","might","sight","tight","bright"],
+  "ake": ["make","take","lake","cake","fake","wake","bake","shake","snake","stake","brake","break","flake","quake","rake","sake","ache","awake","mistake","heartbreak","earthquake","cupcake","snowflake","overtake","undertake"],
+  "ine": ["line","time","mine","shine","wine","fine","nine","vine","dine","pine","spine","shrine","swine","twine","design","define","decline","divine","combine","sunshine","moonshine","borderline","deadline","online","headline","guideline","Valentine"],
+  "old": ["bold","gold","cold","hold","told","fold","mold","old","sold","rolled","tolled","enrolled","controlled","unfold","behold","household","threshold","marigold","manifold"],
+  "ight3": ["bite","cite","fight","height","kite","light","might","night","quite","right","sight","tight","white","write","tonight","moonlight","twilight","spotlight","playwright","forthright"],
+  "end": ["blend","friend","send","bend","lend","tend","spend","trend","end","mend","blend","fend","wend","amend","attend","extend","defend","depend","descend","intend","offend","pretend","suspend","weekend","dividend","recommend","comprehend"],
+  "ree": ["tree","free","see","be","me","we","key","sea","tea","agree","three","spree","flee","glee","knee","plea","decree","degree","foresee","guarantee","employee","refugee","jubilee","Tennessee","bumblebee","honeybee"],
+  "ow": ["know","go","show","slow","flow","glow","grow","blow","snow","throw","crow","dough","below","bestow","outgrow","overflow","undertow","rainbow","shadow","window","meadow","elbow","follow","hollow","pillow","willow","yellow","sparrow","tomorrow"],
+  "art": ["heart","start","part","art","cart","chart","dart","smart","tart","apart","restart","depart","impart","outsmart","upstart","sweetheart","overstart"],
+  "ore": ["more","store","before","explore","ignore","restore","therefore","adore","implore","offshore","folklore","bookstore","anymore","Baltimore","furthermore","sophomore","carnivore","herbivore","evermore","overture"],
+  "ace": ["place","face","space","race","base","case","grace","pace","trace","chase","erase","embrace","replace","misplace","birthplace","fireplace","marketplace","interface","commonplace","interlace","outer space"],
+  "ound": ["sound","found","round","ground","bound","mound","pound","wound","around","surround","profound","background","compound","abound","astound","playground","rebound","resound","underground","turnaround","hound","bound","mound"],
+  "air": ["care","there","where","share","fair","pair","wear","bear","chair","dare","flare","glare","rare","spare","square","aware","compare","declare","prepare","repair","nightmare","software","hardware","welfare","beware","affair","millionaire","billionaire"],
+};
+
+function countSyllables(word) {
+  word = word.toLowerCase();
+  if (word.length <= 3) return 1;
+  word = word.replace(/(?:[^laeiouy]es|ed|[^laeiouy]e)$/, '');
+  word = word.replace(/^y/, '');
+  const matches = word.match(/[aeiouy]{1,2}/g);
+  return matches ? Math.max(1, matches.length) : 1;
+}
+
+function getEnding(word) {
+  word = word.toLowerCase();
+  for (let len = Math.min(5, word.length); len >= 2; len--) {
+    const ending = word.slice(-len);
+    if (rhymeDB[ending] || rhymeDB[ending+'2'] || rhymeDB[ending+'3']) return ending;
+  }
+  return null;
+}
+
+let currentRhymes = [];
+let currentFilter = 'all';
+
+function filterBy(syl, btn) {
+  currentFilter = syl;
+  document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  renderRhymes(currentRhymes, document.getElementById('wordInput').value.trim());
+}
+
+function findRhymes() {
+  const word = document.getElementById('wordInput').value.trim().toLowerCase();
+  if (!word) return;
+
+  let rhymes = [];
+  const wEnding = word.slice(-3);
+
+  // Match against DB
+  Object.entries(rhymeDB).forEach(([key, words]) => {
+    if (key.replace(/[0-9]/g,'') === wEnding || key.replace(/[0-9]/g,'') === word.slice(-4) || key.replace(/[0-9]/g,'') === word.slice(-2)) {
+      rhymes = [...rhymes, ...words];
+    }
+  });
+
+  // Fallback: match any word in DB that shares the last 2 chars
+  if (rhymes.length === 0) {
+    const end2 = word.slice(-2);
+    Object.values(rhymeDB).forEach(words => {
+      words.forEach(w => { if (w.endsWith(end2) && w !== word) rhymes.push(w); });
+    });
+  }
+
+  // Remove duplicates and the word itself
+  rhymes = [...new Set(rhymes)].filter(r => r !== word);
+  currentRhymes = rhymes;
+  renderRhymes(rhymes, word);
+}
+
+function renderRhymes(rhymes, word) {
+  const results = document.getElementById('results');
+  const filtered = currentFilter === 'all' ? rhymes : rhymes.filter(r => countSyllables(r) === currentFilter);
+
+  if (filtered.length === 0) {
+    results.innerHTML = `<div class="empty">No rhymes found for "<strong>${word}</strong>" — try a different word or filter.</div>`;
+    return;
+  }
+
+  // Group by syllables
+  const groups = {};
+  filtered.forEach(r => {
+    const s = countSyllables(r);
+    if (!groups[s]) groups[s] = [];
+    groups[s].push(r);
+  });
+
+  let html = `<p style="font-size:0.85rem;color:#718096;margin-bottom:1rem">Found <strong>${filtered.length}</strong> rhymes for "<strong>${word}</strong>"</p>`;
+  Object.keys(groups).sort((a,b)=>a-b).forEach(syl => {
+    const label = syl === '1' ? '1 syllable' : `${syl} syllables`;
+    html += `<div class="syllable-group">
+      <div class="syllable-label">${label} (${groups[syl].length})</div>
+      <div class="rhyme-grid">${groups[syl].map(w => `<div class="rhyme-word" onclick="document.getElementById('wordInput').value='${w}';findRhymes()">${w}</div>`).join('')}</div>
+    </div>`;
+  });
+  results.innerHTML = html;
+}
+</script>
+</body>
+</html>
