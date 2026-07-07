@@ -118,116 +118,103 @@
 </footer>
 
 <script>
-// Rhyme database — common word endings mapped to word lists
-const rhymeDB = {
-  "ay": ["day","say","way","play","stay","may","pay","ray","bay","clay","gray","hay","lay","pray","sway","tray","spray","display","delay","relay","okay","away","today","birthday","doorway","runway","subway","gateway","halfway","Monday","Sunday"],
-  "ight": ["night","light","right","fight","might","sight","tight","bright","flight","quite","white","write","bite","cite","kite","mite","delight","tonight","upright","midnight","twilight","moonlight","sunlight","daylight","highlight","insight","website"],
-  "ove": ["love","dove","above","shove","glove","of","thereof"],
-  "oon": ["moon","soon","tune","june","boon","croon","goon","loon","noon","rune","spoon","swoon","cartoon","balloon","cocoon","monsoon","platoon","bassoon","lagoon","harpoon","honeymoon","afternoon"],
-  "ive": ["live","give","drive","five","hive","dive","jive","strive","thrive","arrive","survive","contrive","alive","derive","deprive"],
-  "ove2": ["stove","wove","grove","clove","dove","cove","trove","rove","drove","strove"],
-  "eat": ["beat","heat","meet","neat","seat","feat","feet","greet","sheet","street","sweet","treat","wheat","cheat","fleet","sleet","repeat","compete","delete","complete","defeat","retreat","concrete","athlete","heartbeat","offbeat"],
-  "ong": ["song","long","strong","wrong","belong","along","prolong","among","throng","gong","prong","Hong","Kong","lifelong","singsong","headstrong"],
-  "ight2": ["write","site","kite","bite","quite","white","night","right","light","fight","might","sight","tight","bright"],
-  "ake": ["make","take","lake","cake","fake","wake","bake","shake","snake","stake","brake","break","flake","quake","rake","sake","ache","awake","mistake","heartbreak","earthquake","cupcake","snowflake","overtake","undertake"],
-  "ine": ["line","time","mine","shine","wine","fine","nine","vine","dine","pine","spine","shrine","swine","twine","design","define","decline","divine","combine","sunshine","moonshine","borderline","deadline","online","headline","guideline","Valentine"],
-  "old": ["bold","gold","cold","hold","told","fold","mold","old","sold","rolled","tolled","enrolled","controlled","unfold","behold","household","threshold","marigold","manifold"],
-  "ight3": ["bite","cite","fight","height","kite","light","might","night","quite","right","sight","tight","white","write","tonight","moonlight","twilight","spotlight","playwright","forthright"],
-  "end": ["blend","friend","send","bend","lend","tend","spend","trend","end","mend","blend","fend","wend","amend","attend","extend","defend","depend","descend","intend","offend","pretend","suspend","weekend","dividend","recommend","comprehend"],
-  "ree": ["tree","free","see","be","me","we","key","sea","tea","agree","three","spree","flee","glee","knee","plea","decree","degree","foresee","guarantee","employee","refugee","jubilee","Tennessee","bumblebee","honeybee"],
-  "ow": ["know","go","show","slow","flow","glow","grow","blow","snow","throw","crow","dough","below","bestow","outgrow","overflow","undertow","rainbow","shadow","window","meadow","elbow","follow","hollow","pillow","willow","yellow","sparrow","tomorrow"],
-  "art": ["heart","start","part","art","cart","chart","dart","smart","tart","apart","restart","depart","impart","outsmart","upstart","sweetheart","overstart"],
-  "ore": ["more","store","before","explore","ignore","restore","therefore","adore","implore","offshore","folklore","bookstore","anymore","Baltimore","furthermore","sophomore","carnivore","herbivore","evermore","overture"],
-  "ace": ["place","face","space","race","base","case","grace","pace","trace","chase","erase","embrace","replace","misplace","birthplace","fireplace","marketplace","interface","commonplace","interlace","outer space"],
-  "ound": ["sound","found","round","ground","bound","mound","pound","wound","around","surround","profound","background","compound","abound","astound","playground","rebound","resound","underground","turnaround","hound","bound","mound"],
-  "air": ["care","there","where","share","fair","pair","wear","bear","chair","dare","flare","glare","rare","spare","square","aware","compare","declare","prepare","repair","nightmare","software","hardware","welfare","beware","affair","millionaire","billionaire"],
-};
+// FindMyRhyme - pronunciation-based rhyme lookup.
+// Data: data/rhymes.min.json (a same-origin static file generated at build time
+// by tools/build-rhyme-data.mjs from CMUdict). No runtime API/backend.
 
-function countSyllables(word) {
-  word = word.toLowerCase();
-  if (word.length <= 3) return 1;
-  word = word.replace(/(?:[^laeiouy]esed[^laeiouy]e)$/, '');
-  word = word.replace(/^y/, '');
-  const matches = word.match(/[aeiouy]{1,2}/g);
-  return matches ? Math.max(1, matches.length) : 1;
-}
-
-function getEnding(word) {
-  word = word.toLowerCase();
-  for (let len = Math.min(5, word.length); len >= 2; len--) {
-    const ending = word.slice(-len);
-    if (rhymeDB[ending] || rhymeDB[ending+'2'] || rhymeDB[ending+'3']) return ending;
-  }
-  return null;
-}
-
-let currentRhymes = [];
+let RHYMES = null;       // loaded rhyme data
+let dataError = false;
+let pendingWord = null;  // query typed before the data finished loading
+let currentRhymes = {};  // { word, perfect:[], near:[], known } for re-filtering
 let currentFilter = 'all';
 
-function filterBy(syl, btn) {
-  currentFilter = syl;
-  document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
-  btn.classList.add('active');
-  renderRhymes(currentRhymes, document.getElementById('wordInput').value.trim());
-}
+fetch('data/rhymes.min.json')
+  .then(function (r) { if (!r.ok) throw new Error('load'); return r.json(); })
+  .then(function (d) {
+    RHYMES = d;
+    if (pendingWord !== null) { const w = pendingWord; pendingWord = null; lookup(w); }
+  })
+  .catch(function () { dataError = true; renderMessage('Sorry - rhyme data could not be loaded. Please refresh the page.'); });
+
+function sylOf(w) { return (RHYMES && RHYMES.words[w]) ? RHYMES.words[w][1] : 1; }
 
 function findRhymes() {
   const word = document.getElementById('wordInput').value.trim().toLowerCase();
   if (!word) return;
-
-  let rhymes = [];
-  const wEnding = word.slice(-3);
-
-  // Match against DB
-  Object.entries(rhymeDB).forEach(([key, words]) => {
-    if (key.replace(/[0-9]/g,'') === wEnding || key.replace(/[0-9]/g,'') === word.slice(-4) || key.replace(/[0-9]/g,'') === word.slice(-2)) {
-      rhymes = [...rhymes, ...words];
-    }
-  });
-
-  // Fallback: match any word in DB that shares the last 2 chars
-  if (rhymes.length === 0) {
-    const end2 = word.slice(-2);
-    Object.values(rhymeDB).forEach(words => {
-      words.forEach(w => { if (w.endsWith(end2) && w !== word) rhymes.push(w); });
-    });
-  }
-
-  // Remove duplicates and the word itself
-  rhymes = [...new Set(rhymes)].filter(r => r !== word);
-  currentRhymes = rhymes;
-  renderRhymes(rhymes, word);
+  if (dataError) { renderMessage('Sorry - rhyme data could not be loaded. Please refresh the page.'); return; }
+  if (!RHYMES) { pendingWord = word; renderMessage('Loading rhyme data...'); return; }
+  lookup(word);
 }
 
-function renderRhymes(rhymes, word) {
-  const results = document.getElementById('results');
-  const filtered = currentFilter === 'all' ? rhymes : rhymes.filter(r => countSyllables(r) === currentFilter);
+function lookup(word) {
+  const entry = RHYMES.words[word];
+  let perfect = [], near = [];
+  if (entry) {
+    const pk = entry[0], nk = entry[2];
+    const perfectSet = new Set(RHYMES.perfect[pk] || []);
+    perfect = [...perfectSet].filter(function (w) { return w !== word; });
+    near = (RHYMES.near[nk] || []).filter(function (w) { return w !== word && !perfectSet.has(w); });
+  }
+  currentRhymes = { word: word, perfect: perfect, near: near, known: !!entry };
+  renderRhymes();
+}
 
-  if (filtered.length === 0) {
-    results.innerHTML = `<div class="empty">No rhymes found for "<strong></strong>" — try a different word or filter.</div>`;
-    results.querySelector('.empty strong').textContent = word;
+function filterBy(syl, btn) {
+  currentFilter = syl;
+  document.querySelectorAll('.filter-btn').forEach(function (b) { b.classList.remove('active'); });
+  btn.classList.add('active');
+  if (currentRhymes.word) renderRhymes();
+}
+
+function renderMessage(msg) {
+  const results = document.getElementById('results');
+  results.innerHTML = '<div class="empty"></div>';
+  results.querySelector('.empty').textContent = msg;
+}
+
+function chipGrid(list) {
+  return '<div class="rhyme-grid">' + list.map(function (w) {
+    return '<div class="rhyme-word" onclick="document.getElementById(\'wordInput\').value=\'' + w + '\';findRhymes()">' + w + '</div>';
+  }).join('') + '</div>';
+}
+
+function syllableGroups(list) {
+  const groups = {};
+  list.forEach(function (w) { const s = sylOf(w); (groups[s] || (groups[s] = [])).push(w); });
+  return Object.keys(groups).sort(function (a, b) { return a - b; }).map(function (s) {
+    const label = s === '1' ? '1 syllable' : (s + ' syllables');
+    return '<div class="syllable-group"><div class="syllable-label">' + label + ' (' + groups[s].length + ')</div>' + chipGrid(groups[s]) + '</div>';
+  }).join('');
+}
+
+function renderRhymes() {
+  const results = document.getElementById('results');
+  const word = currentRhymes.word;
+  const known = currentRhymes.known;
+  const flt = function (w) { return currentFilter === 'all' || sylOf(w) === currentFilter; };
+  const p = (currentRhymes.perfect || []).filter(flt);
+  const n = (currentRhymes.near || []).filter(flt).slice(0, 24);
+
+  if (p.length === 0 && n.length === 0) {
+    const msg = !known
+      ? '"<strong class="qw"></strong>" is not in our pronunciation dictionary, so we cannot find a reliable rhyme.'
+      : 'No strong exact rhymes found for "<strong class="qw"></strong>".';
+    results.innerHTML = '<div class="empty">' + msg + '</div>';
+    results.querySelector('.qw').textContent = word;
     return;
   }
 
-  // Group by syllables
-  const groups = {};
-  filtered.forEach(r => {
-    const s = countSyllables(r);
-    if (!groups[s]) groups[s] = [];
-    groups[s].push(r);
-  });
-
-  let html = `<p style="font-size:0.85rem;color:#718096;margin-bottom:1rem">Found <strong>${filtered.length}</strong> rhymes for "<strong class="query-word"></strong>"</p>`;
-  Object.keys(groups).sort((a,b)=>a-b).forEach(syl => {
-    const label = syl === '1' ? '1 syllable' : `${syl} syllables`;
-    html += `<div class="syllable-group">
-      <div class="syllable-label">${label} (${groups[syl].length})</div>
-      <div class="rhyme-grid">${groups[syl].map(w => `<div class="rhyme-word" onclick="document.getElementById('wordInput').value='${w}';findRhymes()">${w}</div>`).join('')}</div>
-    </div>`;
-  });
+  let html = '<p style="font-size:0.85rem;color:#718096;margin-bottom:1rem">Rhymes for "<strong class="qw"></strong>"</p>';
+  if (p.length) {
+    html += '<div class="syllable-label" style="color:#4a5568">Perfect rhymes (' + p.length + ')</div>' + syllableGroups(p);
+  } else {
+    html += '<div class="empty" style="padding:1rem 0">No strong exact rhymes - showing near rhymes below.</div>';
+  }
+  if (n.length) {
+    html += '<div class="syllable-label" style="margin-top:1rem;color:#4a5568">Near rhymes - same vowel sound (' + n.length + ')</div>' + chipGrid(n);
+  }
   results.innerHTML = html;
-  const qw = results.querySelector('.query-word');
-  if (qw) qw.textContent = word;
+  results.querySelectorAll('.qw').forEach(function (el) { el.textContent = word; });
 }
 </script>
 </body>
