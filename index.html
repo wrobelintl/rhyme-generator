@@ -118,19 +118,21 @@
 </footer>
 
 <script>
-// FindMyRhyme - pronunciation-based rhyme lookup (compact data format).
+// FindMyRhyme - pronunciation-based rhyme lookup (license-safe data format).
 // Data: data/rhymes.min.json (same-origin static file generated at build time by
-// tools/build-rhyme-data.mjs from CMUdict). No runtime API/backend.
-// Format: w = words in frequency order; g = perfect rhyme-group id per word;
+// tools/build-rhyme-data.mjs from CMUdict + Google Books Ngram ranks; licenses
+// and attribution in data/NOTICE.md). No runtime API/backend.
+// Format: w = words in frequency order; g = primary perfect-group id per word;
+//         a2 = sparse extra group ids from alternate pronunciations (homographs);
 //         s = syllable digit per word; n = near-group id per perfect group
-//         (-1 = open syllable, no near tier); x = suppressed word indices.
-// Groups are derived here in one pass; because w is frequency-ordered, every
-// derived group is already sorted best-first.
+//         (-1 = open syllable, no near tier); f = family digit per group
+//         (1 masculine / 2 feminine / 3 dactylic); h = sparse homophone-group id;
+//         x = suppressed word indices (queryable, never offered).
 
-let DB = null;           // built lookup structure
+let DB = null;
 let dataError = false;
-let pendingWord = null;  // query typed before the data finished loading
-let currentRhymes = null; // { word, perfect:[], near:[], known } for re-filtering
+let pendingWord = null;
+let currentRhymes = null;
 let currentFilter = 'all';
 
 fetch('data/rhymes.min.json')
@@ -138,14 +140,28 @@ fetch('data/rhymes.min.json')
   .then(function (d) {
     const index = new Map();
     d.w.forEach(function (word, i) { index.set(word, i); });
-    const groups = [];      // perfect group id -> [word index...]
+    const groups = [];      // perfect group id -> [word index...] (freq-ordered)
     const nearGroups = [];  // near group id -> [word index...]
+    const addNear = function (gid, i) {
+      const ng = d.n[gid];
+      if (ng < 0) return;
+      const arr = nearGroups[ng] || (nearGroups[ng] = []);
+      if (arr[arr.length - 1] !== i) arr.push(i);
+    };
     d.g.forEach(function (gid, i) {
       (groups[gid] || (groups[gid] = [])).push(i);
-      const ng = d.n[gid];
-      if (ng >= 0) (nearGroups[ng] || (nearGroups[ng] = [])).push(i);
+      addNear(gid, i);
     });
-    DB = { d: d, index: index, groups: groups, nearGroups: nearGroups, hidden: new Set(d.x || []) };
+    Object.keys(d.a2).forEach(function (k) {
+      const i = +k;
+      d.a2[k].forEach(function (gid) {
+        (groups[gid] || (groups[gid] = [])).push(i);
+        addNear(gid, i);
+      });
+    });
+    groups.forEach(function (arr) { if (arr) arr.sort(function (a, b) { return a - b; }); });
+    nearGroups.forEach(function (arr) { if (arr) arr.sort(function (a, b) { return a - b; }); });
+    DB = { d: d, index: index, groups: groups, nearGroups: nearGroups, hidden: new Set((d.x || []).map(Number)) };
     if (pendingWord !== null) { const w = pendingWord; pendingWord = null; lookup(w); }
   })
   .catch(function () { dataError = true; renderMessage('Sorry - rhyme data could not be loaded. Please refresh the page.'); });
@@ -166,24 +182,36 @@ function findRhymes() {
 function lookup(word) {
   const i = DB.index.get(word);
   if (i === undefined) {
-    currentRhymes = { word: word, perfect: [], near: [], known: false };
+    currentRhymes = { word: word, known: false, senses: [], homophones: [] };
     renderRhymes();
     return;
   }
-  const gid = DB.d.g[i];
-  const members = DB.groups[gid];
-  const perfect = members
-    .filter(function (j) { return j !== i && !DB.hidden.has(j); })
-    .map(function (j) { return DB.d.w[j]; });
-  let near = [];
-  const ng = DB.d.n[gid];
-  if (ng >= 0) {
-    const inPerfect = new Set(members);
-    near = (DB.nearGroups[ng] || [])
-      .filter(function (j) { return !inPerfect.has(j) && !DB.hidden.has(j); })
-      .map(function (j) { return DB.d.w[j]; });
-  }
-  currentRhymes = { word: word, perfect: perfect, near: near, known: true };
+  const d = DB.d;
+  const gids = [d.g[i]].concat(d.a2[i] || []);
+  const hid = d.h[i];
+  const isHomophone = function (j) { return hid !== undefined && d.h[j] === hid; };
+
+  const homophones = (DB.groups[d.g[i]] || [])
+    .filter(function (j) { return j !== i && isHomophone(j) && !DB.hidden.has(j); })
+    .map(function (j) { return d.w[j]; });
+
+  const senses = gids.map(function (gid) {
+    const members = DB.groups[gid] || [];
+    const inGroup = new Set(members);
+    const perfect = members
+      .filter(function (j) { return j !== i && !DB.hidden.has(j) && !isHomophone(j); })
+      .map(function (j) { return d.w[j]; });
+    let near = [];
+    const ng = d.n[gid];
+    if (ng >= 0) {
+      near = (DB.nearGroups[ng] || [])
+        .filter(function (j) { return j !== i && !inGroup.has(j) && !DB.hidden.has(j) && !isHomophone(j); })
+        .map(function (j) { return d.w[j]; });
+    }
+    return { perfect: perfect, near: near, family: +d.f[gid] };
+  });
+
+  currentRhymes = { word: word, known: true, senses: senses, homophones: homophones };
   renderRhymes();
 }
 
@@ -215,31 +243,49 @@ function syllableGroups(list) {
   }).join('');
 }
 
+var FAMILY_LABEL = { 1: 'masculine rhyme (stressed final syllable)', 2: 'feminine rhyme (2-syllable rhyme sound)', 3: 'dactylic rhyme (3-syllable rhyme sound)' };
+
 function renderRhymes() {
   const results = document.getElementById('results');
   const word = currentRhymes.word;
-  const known = currentRhymes.known;
   const flt = function (w) { return currentFilter === 'all' || sylOf(w) === currentFilter; };
-  const p = (currentRhymes.perfect || []).filter(flt).slice(0, 60);
-  const n = (currentRhymes.near || []).filter(flt).slice(0, 18);
 
-  if (p.length === 0 && n.length === 0) {
-    const msg = !known
-      ? '"<strong class="qw"></strong>" is not in our rhyming dictionary, so we cannot suggest reliable rhymes.'
-      : 'No strong exact rhymes found for "<strong class="qw"></strong>".';
-    results.innerHTML = '<div class="empty">' + msg + '</div>';
+  if (!currentRhymes.known) {
+    results.innerHTML = '<div class="empty">"<strong class="qw"></strong>" is not in our rhyming dictionary, so we cannot suggest reliable rhymes.</div>';
+    results.querySelector('.qw').textContent = word;
+    return;
+  }
+
+  const senses = currentRhymes.senses.map(function (sense) {
+    return { perfect: sense.perfect.filter(flt).slice(0, 60), near: sense.near.filter(flt).slice(0, 18), family: sense.family };
+  });
+  const homophones = currentRhymes.homophones.filter(flt);
+  const total = senses.reduce(function (t, s) { return t + s.perfect.length + s.near.length; }, 0);
+
+  if (total === 0 && homophones.length === 0) {
+    results.innerHTML = '<div class="empty">No strong exact rhymes found for "<strong class="qw"></strong>".</div>';
     results.querySelector('.qw').textContent = word;
     return;
   }
 
   let html = '<p style="font-size:0.85rem;color:#718096;margin-bottom:1rem">Rhymes for "<strong class="qw"></strong>"</p>';
-  if (p.length) {
-    html += '<div class="syllable-label" style="color:#4a5568">Perfect rhymes (' + p.length + ')</div>' + syllableGroups(p);
-  } else {
-    html += '<div class="empty" style="padding:1rem 0">No strong exact rhymes - showing near rhymes below.</div>';
-  }
-  if (n.length) {
-    html += '<div class="syllable-label" style="margin-top:1rem;color:#4a5568">Near rhymes - similar ending sound (' + n.length + ')</div>' + chipGrid(n);
+  senses.forEach(function (sense, k) {
+    if (sense.perfect.length === 0 && sense.near.length === 0) return;
+    if (senses.length > 1) {
+      const eg = sense.perfect[0] || sense.near[0] || '';
+      html += '<div class="syllable-label" style="margin-top:' + (k ? '1.25rem' : '0') + ';color:#2d3748">Pronunciation ' + (k + 1) + (eg ? ' — rhymes with “' + eg + '”' : '') + '</div>';
+    }
+    if (sense.perfect.length) {
+      html += '<div class="syllable-label" style="color:#4a5568">Perfect rhymes (' + sense.perfect.length + ') · ' + (FAMILY_LABEL[sense.family] || '') + '</div>' + syllableGroups(sense.perfect);
+    } else {
+      html += '<div class="empty" style="padding:0.75rem 0">No strong exact rhymes for this pronunciation - showing near rhymes.</div>';
+    }
+    if (sense.near.length) {
+      html += '<div class="syllable-label" style="margin-top:0.75rem;color:#4a5568">Near rhymes - similar ending sound (' + sense.near.length + ')</div>' + chipGrid(sense.near);
+    }
+  });
+  if (homophones.length) {
+    html += '<div class="syllable-label" style="margin-top:1.25rem;color:#4a5568">Homophones - sound identical, not rhymes (' + homophones.length + ')</div>' + chipGrid(homophones);
   }
   results.innerHTML = html;
   results.querySelectorAll('.qw').forEach(function (el) { el.textContent = word; });

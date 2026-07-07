@@ -1,40 +1,44 @@
-// build-rhyme-data.mjs — FindMyRhyme static rhyme-data builder (refined)
+// build-rhyme-data.mjs — FindMyRhyme static rhyme-data builder (license-safe)
 //
 // Generates PRONUNCIATION-based rhyme data (not spelling-based) so the live,
 // client-side tool can return real rhymes without any runtime API/backend.
 //
-// Sources (fetched at build time, NOT shipped whole):
-//   * Pronunciations: CMU Pronouncing Dictionary (cmusphinx/cmudict), BSD-2-Clause.
-//       https://github.com/cmusphinx/cmudict  — see data/SOURCES.md for the notice.
-//   * Common-word filter/ranking: first20hours/google-10000-english (MIT),
-//       used only to keep the dataset small, common, and junk-free.
+// Sources (fetched at build time, NOT shipped whole; see data/SOURCES.md and
+// data/NOTICE.md for full license and attribution notices):
+//   * Pronunciations: CMU Pronouncing Dictionary (cmusphinx/cmudict),
+//       BSD-2-Clause. (C) 1993-2015 Carnegie Mellon University.
+//       https://github.com/cmusphinx/cmudict — full notice in data/NOTICE.md.
+//   * Word frequency ranks: Google Books Ngram Viewer datasets (CC BY 3.0,
+//       https://books.google.com/ngrams) via hackerb9/gwordlist's
+//       frequency-alpha-alldicts.txt, whose README explicitly releases the data
+//       under Creative Commons Attribution 3.0. DATA FILE ONLY is used — the
+//       gwordlist shell scripts are GPL>=3 and none of their code is used here.
 //
 // Output: data/rhymes.min.json — compact, lookup-ready. Format:
-//   w: word strings in FREQUENCY ORDER (rank == index); each word stored once.
-//   g: per-word PERFECT rhyme-group id. Words sharing g[i] rhyme exactly.
-//   s: per-word syllable count as one digit ('9' = 9 or more).
-//   n: per perfect-group NEAR-group id, or -1 when the group's rhyme tail is the
-//      bare stressed vowel (open syllable) — those get no near tier.
-//   x: indices of words that resolve as queries but are never OFFERED as rhymes
-//      (grammatical glue words like "of"/"the").
-// The browser derives groupId -> [word...] maps in one pass at load; because w is
-// frequency-ordered, every derived group is automatically frequency-sorted. The
-// spike format stored each word string up to 3x (words + perfect + near maps);
-// this format stores it exactly once, which is where the size win comes from.
+//   w:  word strings in FREQUENCY ORDER (rank == index); each word stored once.
+//   g:  per-word PRIMARY perfect rhyme-group id (from the word's first CMUdict
+//       pronunciation). Words sharing a group id rhyme exactly.
+//   a2: sparse { wordIndex: [extra group ids] } from ALTERNATE pronunciations
+//       (homographs: live/read/wind/lead each belong to two rhyme groups).
+//   s:  per-word syllable count as one digit ('9' = 9+), primary pronunciation.
+//   n:  per perfect-group NEAR-group id, or -1 for open syllables (no near tier).
+//   f:  per perfect-group rhyme-family digit = vowels in the rhyme tail capped
+//       at 3 (1 = masculine, 2 = feminine, 3 = dactylic).
+//   h:  sparse { wordIndex: homophone-group id } for words whose full primary
+//       pronunciation is identical to another word's (sea/see). The UI lists
+//       these separately — homophones are not rhymes.
+//   x:  word indices that resolve as queries but are never OFFERED as rhymes.
 //
-// Rhyme-key algorithm (exact rhymes — unchanged from the spike):
-//   perfect key = phones from the LAST primary-stressed vowel (fallback: last
-//                 vowel) through the end, stress digits stripped.
-//                 HH AO1 R S -> "AO R S".  No spelling fallback anywhere.
-//
-// Near-rhyme key (tightened in this refinement):
-//   same phones from the stressed vowel through the second-to-last phoneme, plus
-//   the MANNER CLASS of the final phoneme. Near rhymes may differ only in their
-//   final consonant, and only within the same class (nasal / stop / fricative /
-//   affricate / liquid / glide). So time (AY M) ~ line (AY N) — both nasal — but
-//   time is NOT near like (AY K, stop) or life (AY F, fricative). Open-syllable
-//   words (day -> EY) get no near tier at all, which removes the old weak
-//   open-vowel dumps (day -> page/date/name).
+// Rhyme-key algorithm:
+//   rhyme tail = phones from the LAST vowel carrying stress 1 OR 2 (primary or
+//   secondary — the same rule as pronouncing.py's "rhyming part"; fallback:
+//   last vowel of any stress) through the end, stress digits stripped.
+//   HH AO1 R S -> "AO R S"; P L EY1 G R AW2 N D -> "AW N D" (playground rhymes
+//   with sound/ground — anchoring on secondary stress fixes late-stress
+//   compounds). No spelling fallback anywhere.
+// Near-rhyme key: tail minus its final phoneme, plus the MANNER CLASS of that
+//   final phoneme (nasal/stop/fricative/affricate/liquid/glide): time(AY M) ~
+//   line(AY N), never like(AY K). Open-syllable tails get no near tier.
 //
 // Run:  node tools/build-rhyme-data.mjs
 
@@ -42,28 +46,52 @@ import { writeFileSync, mkdirSync } from 'node:fs';
 import { gzipSync } from 'node:zlib';
 
 const CMUDICT_URL = 'https://raw.githubusercontent.com/cmusphinx/cmudict/master/cmudict.dict';
-const COMMON_URL  = 'https://raw.githubusercontent.com/first20hours/google-10000-english/master/google-10000-english-usa-no-swears.txt';
+const FREQ_URL = 'https://raw.githubusercontent.com/hackerb9/gwordlist/master/frequency-alpha-alldicts.txt';
 
-// A small seed of the owner's example words so the engine demonstrably covers
-// them even if they fall outside the top-10k frequency list. All must be real
-// CMUdict entries to be included; this only widens eligibility, never invents words.
+// Cap on frequency-ranked vocabulary (SEED words are added on top if missing).
+const TARGET_WORDS = 9500;
+
+// Seed words guaranteeing coverage of the owner's test cases and the homograph/
+// homophone demonstrations, regardless of frequency cutoff. All must exist in
+// CMUdict to be included; this widens eligibility, never invents words.
 const SEED = ['horse','course','force','source','remorse','divorce','endorse','coarse','hoarse',
   'time','rhyme','climb','prime','crime','lime','dime','chime','grime','slime',
   'line','shine','mine','fine','nine','vine','dine','pine','spine','wine','shrine','twine',
   'love','dove','glove','above','shove','day','way','say','play','stay','away','gray','clay',
   'night','light','bright','sight','write','right','might','flight','fight','tight','delight',
   'heart','start','part','apart','smart','fire','desire','wire','tire','hire','inspire',
-  'song','long','strong','along','moon','soon','spoon','tune'];
+  'song','long','strong','along','moon','soon','spoon','tune','playground','ground','sound',
+  'found','around','sea','see','red','bed','head','said','instead','need','feed','speed',
+  'indeed','kind','find','mind','behind','lead','read','wind','live','give','five','drive','alive'];
+
+// Grammatical glue words: resolvable as a query, never OFFERED as a rhyme.
+const FUNCTION = new Set(['the','of','thereof','to','and','a','an','in','is','it','for',
+  'as','at','on','or','if','that','but','from','with','this','us','what']);
+
+// Web/print abbreviations that pollute rhyme lists.
+const STOP = new Set(['usa','aug','dvd','url','faq','html','http','www','etc','inc',
+  'ltd','pdf','ceo','usb','gps','jan','feb','mar','apr','jun','jul','sep','oct','nov','dec']);
+
+// 2-letter tokens that are real words (corpus is full of state codes/units).
+const TWO_LETTER_REAL = new Set(['of','to','in','is','on','by','it','or','be','at','as',
+  'an','we','us','if','my','do','no','he','up','so','me','go','oh','hi','ha','lo','ah',
+  'um','ye','yo','aw','eh','uh']);
+
+// Family-safe exclusion: strong profanity/slurs are excluded from the dataset
+// entirely (the previous frequency source shipped a pre-filtered variant; the
+// Ngram data does not). Queries for these return the not-in-dictionary state.
+const PROFANITY = new Set(['fuck','fucking','fucker','fucked','shit','shitty','bullshit',
+  'cunt','bitch','bitches','asshole','assholes','dick','dicks','cock','cocks','pussy',
+  'nigger','niggers','faggot','faggots','wanker','whore','whores','slut','sluts','tits']);
 
 // Manner classes for the final-consonant near-rhyme match.
 const MANNER = {
-  M: 'nas', N: 'nas', NG: 'nas',                                     // nasals
-  P: 'stp', T: 'stp', K: 'stp', B: 'stp', D: 'stp', G: 'stp',        // stops
-  F: 'fri', V: 'fri', TH: 'fri', DH: 'fri', S: 'fri', Z: 'fri',
-  SH: 'fri', ZH: 'fri', HH: 'fri',                                   // fricatives
-  CH: 'aff', JH: 'aff',                                              // affricates
-  L: 'liq', R: 'liq',                                                // liquids
-  W: 'gli', Y: 'gli',                                                // glides
+  M: 'nas', N: 'nas', NG: 'nas',
+  P: 'stp', T: 'stp', K: 'stp', B: 'stp', D: 'stp', G: 'stp',
+  F: 'fri', V: 'fri', TH: 'fri', DH: 'fri', S: 'fri', Z: 'fri', SH: 'fri', ZH: 'fri', HH: 'fri',
+  CH: 'aff', JH: 'aff',
+  L: 'liq', R: 'liq',
+  W: 'gli', Y: 'gli',
 };
 
 async function fetchText(url) {
@@ -74,13 +102,12 @@ async function fetchText(url) {
 
 const isVowel = p => /\d$/.test(p); // in cmudict.dict only vowels carry a stress digit
 
+// Anchor: last vowel with stress 1 OR 2 (pronouncing.py's rule); fallback: last vowel.
 function anchorIndex(phones) {
-  for (let i = phones.length - 1; i >= 0; i--) if (/1$/.test(phones[i])) return i; // primary stress
-  for (let i = phones.length - 1; i >= 0; i--) if (isVowel(phones[i])) return i;    // fallback: last vowel
+  for (let i = phones.length - 1; i >= 0; i--) if (/[12]$/.test(phones[i])) return i;
+  for (let i = phones.length - 1; i >= 0; i--) if (isVowel(phones[i])) return i;
   return -1;
 }
-// tail = phones from the anchor to the end; raw keeps stress digits (for vowel
-// detection on the final phone), stripped is what keys are built from.
 function tailOf(phones) {
   const idx = anchorIndex(phones);
   if (idx < 0) return null;
@@ -89,13 +116,15 @@ function tailOf(phones) {
 }
 const perfectKeyOf = tail => tail.stripped.join(' ');
 function nearKeyOf(tail) {
-  if (tail.stripped.length < 2) return null; // open syllable: no near tier
+  if (tail.stripped.length < 2) return null;
   const last = tail.stripped[tail.stripped.length - 1];
   const cls = isVowel(tail.raw[tail.raw.length - 1]) ? 'vow' : (MANNER[last] || 'oth');
   return tail.stripped.slice(0, -1).join(' ') + '|' + cls;
 }
 const syllables = phones => phones.filter(isVowel).length;
+const tailVowels = tail => tail.raw.filter(isVowel).length;
 
+// Parse CMUdict keeping ALL pronunciations per word (word, word(2), word(3)...).
 function parseCmudict(text) {
   const map = new Map();
   for (const line of text.split('\n')) {
@@ -104,94 +133,134 @@ function parseCmudict(text) {
     const core = hash >= 0 ? line.slice(0, hash) : line;
     const parts = core.trim().split(/\s+/);
     if (parts.length < 2) continue;
-    const word = parts[0].toLowerCase().replace(/\(\d+\)$/, ''); // drop variant marker word(2)
-    if (!/^[a-z]+$/.test(word)) continue;                        // plain alphabetic words only
-    if (!map.has(word)) map.set(word, parts.slice(1));           // keep first (primary) pronunciation
+    const word = parts[0].toLowerCase().replace(/\(\d+\)$/, '');
+    if (!/^[a-z]+$/.test(word)) continue;
+    const arr = map.get(word) || [];
+    arr.push(parts.slice(1));
+    map.set(word, arr);
   }
   return map;
 }
 
+// Parse gwordlist frequency-alpha-alldicts.txt: "#RANKING WORD COUNT PERCENT CUMULATIVE".
+function parseFreq(text) {
+  const ranked = [];
+  for (const line of text.split('\n')) {
+    if (!line || line.startsWith('#')) continue;
+    const cols = line.trim().split(/\s+/);
+    if (cols.length < 2) continue;
+    const word = cols[1].toLowerCase();
+    if (/^[a-z]+$/.test(word)) ranked.push(word);
+  }
+  return ranked;
+}
+
 async function main() {
-  console.error('fetching CMUdict + common-word list...');
-  const [cmuText, commonText] = await Promise.all([fetchText(CMUDICT_URL), fetchText(COMMON_URL)]);
+  console.error('fetching CMUdict + gwordlist frequency data...');
+  const [cmuText, freqText] = await Promise.all([fetchText(CMUDICT_URL), fetchText(FREQ_URL)]);
   const cmu = parseCmudict(cmuText);
+  const ranked = parseFreq(freqText);
+  console.error(`parsed cmudict words=${cmu.size} freq-ranked words=${ranked.length}`);
 
-  const common = commonText.split('\n').map(w => w.trim().toLowerCase()).filter(w => /^[a-z]+$/.test(w));
   const rank = new Map();
-  common.forEach((w, i) => { if (!rank.has(w)) rank.set(w, i); });
-  // seed words get a rank just past the common list so they are eligible but not top-ranked
-  SEED.forEach((w, i) => { if (!rank.has(w)) rank.set(w, common.length + i); });
+  ranked.forEach((w, i) => { if (!rank.has(w)) rank.set(w, i); });
+  SEED.forEach((w, i) => { if (!rank.has(w)) rank.set(w, ranked.length + i); });
 
-  // Drop common web-corpus abbreviations that are technically in CMUdict but
-  // useless as rhymes (they polluted results, e.g. day -> uk/usa/k).
-  const STOP = new Set(['usa','aug','dvd','url','faq','html','http','www','etc','inc',
-    'ltd','pdf','ceo','usb','gps','jan','feb','mar','apr','jun','jul','sep','oct','nov','dec']);
-  // The 10k web corpus is full of 2-letter junk (state codes, units: ca/md/hp/mg/
-  // hz/lb...). Allowlist the 2-letter tokens that are real English words; drop
-  // the rest. Single letters are always dropped.
-  const TWO_LETTER_REAL = new Set(['of','to','in','is','on','by','it','or','be','at','as',
-    'an','we','us','if','my','do','no','he','up','so','me','go','oh','hi','ha','lo','ah',
-    'um','ye','yo','aw','eh','uh']);
-  // Grammatical glue words: still resolvable as a query, but never OFFERED as a
-  // rhyme (they are technically rhymes but read as junk, e.g. love -> of/thereof).
-  const FUNCTION = new Set(['the','of','thereof','to','and','a','an','in','is','it','for',
-    'as','at','on','or','if','that','but','from','with','this','us','what']);
+  const okWord = w =>
+    (w.length >= 3 || TWO_LETTER_REAL.has(w)) &&
+    !STOP.has(w) && !PROFANITY.has(w) && cmu.has(w);
 
-  // Eligible words, frequency-sorted (rank == final array index).
-  const eligible = [...new Set([...common, ...SEED])]
-    .filter(w => (w.length >= 3 || TWO_LETTER_REAL.has(w)) && !STOP.has(w))
-    .sort((a, b) => rank.get(a) - rank.get(b));
+  // Top-ranked eligible words up to TARGET_WORDS, then union the SEED set.
+  const chosen = [];
+  for (const cand of ranked) {
+    if (chosen.length >= TARGET_WORDS) break;
+    if (okWord(cand)) chosen.push(cand);
+  }
+  const set = new Set(chosen);
+  for (const cand of SEED) if (okWord(cand) && !set.has(cand)) { chosen.push(cand); set.add(cand); }
+  chosen.sort((a, b) => rank.get(a) - rank.get(b));
 
   const w = [], g = [], x = [];
+  const a2 = {}, h = {};
   let s = '';
-  const pkId = new Map();   // perfect key string -> group id
-  const nkId = new Map();   // near key string -> near group id
-  const nearOf = [];        // per perfect-group id -> near group id | -1
+  const pkId = new Map();      // perfect key string -> group id
+  const nkId = new Map();      // near key string -> near group id
+  const nearOf = [];           // per group id -> near group id | -1
+  let fam = '';                // per group id -> family digit (1/2/3)
+  const fullPron = new Map();  // full primary pronunciation -> [word index...]
 
-  for (const word of eligible) {
-    const phones = cmu.get(word);
-    if (!phones) continue;
-    const tail = tailOf(phones);
-    if (!tail) continue;
-
+  const gidForTail = tail => {
     const pk = perfectKeyOf(tail);
     let gid = pkId.get(pk);
     if (gid === undefined) {
       gid = pkId.size;
       pkId.set(pk, gid);
       const nk = nearKeyOf(tail);
-      if (nk === null) { nearOf[gid] = -1; }
+      if (nk === null) nearOf[gid] = -1;
       else {
         let nid = nkId.get(nk);
         if (nid === undefined) { nid = nkId.size; nkId.set(nk, nid); }
         nearOf[gid] = nid;
       }
+      fam += String(Math.min(3, tailVowels(tail)));
     }
+    return gid;
+  };
 
-    if (FUNCTION.has(word)) x.push(w.length);
-    g.push(gid);
-    s += String(Math.min(9, syllables(phones)));
+  for (const word of chosen) {
+    const prons = cmu.get(word);
+    const tails = [];
+    for (const phones of prons) {
+      const t = tailOf(phones);
+      if (t) tails.push(t);
+    }
+    if (!tails.length) continue;
+
+    const idx = w.length;
+    const gids = [];
+    for (const t of tails) {
+      const gid = gidForTail(t);
+      if (!gids.includes(gid)) gids.push(gid);
+    }
+    g.push(gids[0]);
+    if (gids.length > 1) a2[idx] = gids.slice(1);
+    s += String(Math.min(9, syllables(prons[0])));
+    if (FUNCTION.has(word)) x.push(idx);
+
+    const fp = prons[0].join(' ');
+    if (!fullPron.has(fp)) fullPron.set(fp, []);
+    fullPron.get(fp).push(idx);
+
     w.push(word);
+  }
+
+  // Homophone groups: words sharing an identical full PRIMARY pronunciation.
+  let hid = 0;
+  for (const idxs of fullPron.values()) {
+    if (idxs.length < 2) continue;
+    for (const i of idxs) h[i] = hid;
+    hid++;
   }
 
   const out = {
     _m: {
       generatedBy: 'tools/build-rhyme-data.mjs',
-      pronunciationSource: 'CMU Pronouncing Dictionary (cmusphinx/cmudict), BSD-2-Clause',
-      commonWordSource: 'first20hours/google-10000-english (usa, no swears), MIT',
-      method: 'phonetic rhyme keys (last stressed vowel -> end); near = same tail, final consonant may differ within manner class; common words only',
+      pronunciationSource: 'CMU Pronouncing Dictionary (cmusphinx/cmudict), BSD-2-Clause — full notice in data/NOTICE.md',
+      frequencySource: 'Google Books Ngram Viewer datasets (CC BY 3.0, https://books.google.com/ngrams) via hackerb9/gwordlist frequency-alpha-alldicts.txt (data released CC BY 3.0)',
+      attribution: 'Rank data derived from the Google Books Ngram Viewer datasets, CC BY 3.0, https://books.google.com/ngrams (via gwordlist, https://github.com/hackerb9/gwordlist). Pronunciations (C) 1993-2015 Carnegie Mellon University, BSD-2-Clause; see data/NOTICE.md.',
+      method: 'phonetic rhyme keys (last stress-1/2 vowel -> end); alternate pronunciations unioned; homophones split; near = same tail, final consonant may differ within manner class',
       words: w.length,
       perfectKeys: pkId.size,
       nearKeys: nkId.size,
     },
-    w, g, s, n: nearOf, x,
+    w, g, a2, s, n: nearOf, f: fam, h, x,
   };
 
   mkdirSync('data', { recursive: true });
   const json = JSON.stringify(out);
   writeFileSync('data/rhymes.min.json', json);
   const gz = gzipSync(Buffer.from(json)).length;
-  console.error(`wrote data/rhymes.min.json  words=${w.length} perfectKeys=${pkId.size} nearKeys=${nkId.size} raw=${json.length}B gzip=${gz}B`);
+  console.error(`wrote data/rhymes.min.json  words=${w.length} perfectKeys=${pkId.size} nearKeys=${nkId.size} altWords=${Object.keys(a2).length} homophoneWords=${Object.keys(h).length} raw=${json.length}B gzip=${gz}B`);
 }
 
 main().catch(e => { console.error('BUILD FAILED:', e.message); process.exit(1); });
