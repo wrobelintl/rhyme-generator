@@ -156,7 +156,7 @@ function getEnding(word) {
   word = word.toLowerCase();
   for (let len = Math.min(5, word.length); len >= 2; len--) {
     const ending = word.slice(-len);
-    if (rhymeDB[ending]  rhymeDB[ending+'2']  rhymeDB[ending+'3']) return ending;
+    if (rhymeDB[ending] || rhymeDB[ending+'2'] || rhymeDB[ending+'3']) return ending;
   }
   return null;
 }
@@ -180,7 +180,7 @@ function findRhymes() {
 
   // Match against DB
   Object.entries(rhymeDB).forEach(([key, words]) => {
-    if (key.replace(/[0-9]/g,'') === wEnding  key.replace(/[0-9]/g,'') === word.slice(-4)  key.replace(/[0-9]/g,'') === word.slice(-2)) {
+    if (key.replace(/[0-9]/g,'') === wEnding || key.replace(/[0-9]/g,'') === word.slice(-4) || key.replace(/[0-9]/g,'') === word.slice(-2)) {
       rhymes = [...rhymes, ...words];
     }
   });
@@ -204,7 +204,8 @@ function renderRhymes(rhymes, word) {
   const filtered = currentFilter === 'all' ? rhymes : rhymes.filter(r => countSyllables(r) === currentFilter);
 
   if (filtered.length === 0) {
-    results.innerHTML = `<div class="empty">No rhymes found for "<strong>${word}</strong>" — try a different word or filter.</div>`;
+    results.innerHTML = `<div class="empty">No rhymes found for "<strong></strong>" — try a different word or filter.</div>`;
+    results.querySelector('.empty strong').textContent = word;
     return;
   }
 
@@ -216,7 +217,7 @@ function renderRhymes(rhymes, word) {
     groups[s].push(r);
   });
 
-  let html = `<p style="font-size:0.85rem;color:#718096;margin-bottom:1rem">Found <strong>${filtered.length}</strong> rhymes for "<strong>${word}</strong>"</p>`;
+  let html = `<p style="font-size:0.85rem;color:#718096;margin-bottom:1rem">Found <strong>${filtered.length}</strong> rhymes for "<strong class="query-word"></strong>"</p>`;
   Object.keys(groups).sort((a,b)=>a-b).forEach(syl => {
     const label = syl === '1' ? '1 syllable' : `${syl} syllables`;
     html += `<div class="syllable-group">
@@ -225,6 +226,8 @@ function renderRhymes(rhymes, word) {
     </div>`;
   });
   results.innerHTML = html;
+  const qw = results.querySelector('.query-word');
+  if (qw) qw.textContent = word;
 }
 </script>
 </body>
