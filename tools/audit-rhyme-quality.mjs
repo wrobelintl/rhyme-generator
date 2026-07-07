@@ -1,0 +1,287 @@
+// audit-rhyme-quality.mjs — local rhyme-quality harness for FindMyRhyme.
+//
+// Audits the COMMITTED artifacts (data/rhymes.min.json + index.html + notice
+// files + ads.txt) against golden cases (tools/rhyme-quality-cases.json),
+// structural invariants, static safety checks, payload budgets, and
+// license/attribution requirements. Plain Node, no dependencies, no network.
+//
+// Usage:
+//   node tools/audit-rhyme-quality.mjs             # report; exit 1 on any HARD failure
+//   node tools/audit-rhyme-quality.mjs --backlog   # also (re)write docs/RHYME_QUALITY_BACKLOG.md
+//
+// Design rules (anti-quality-theater):
+//   * HARD checks are binary and gate the exit code. They are never averaged
+//     into a score. The headline is HARD BLOCKERS: PASS/FAIL, not a number.
+//   * ADVISORY checks report and feed the backlog; they never affect exit code.
+//   * Every advisory finding names concrete words/groups — no vibes.
+//   * No user data is read or collected, ever (the privacy policy promises
+//     searches never leave the browser; quality work must respect that).
+//
+// Env: AUDIT_ALLOW_LARGE=1 downgrades the >100 KB gzip failure to a warning.
+// Reserved for a deliberate, owner-approved coverage expansion — never set it
+// in normal validation.
+
+import { readFileSync, writeFileSync, existsSync } from 'node:fs';
+import { gzipSync } from 'node:zlib';
+
+const WRITE_BACKLOG = process.argv.includes('--backlog');
+
+const raw = readFileSync('data/rhymes.min.json');
+const D = JSON.parse(raw);
+const CASES = JSON.parse(readFileSync('tools/rhyme-quality-cases.json', 'utf8'));
+const html = readFileSync('index.html', 'utf8');
+
+// ---------- result collection ----------
+const hard = [], advisory = [], dims = new Map();
+function check(dim, isHard, okFlag, msg) {
+  (isHard ? hard : advisory).push({ ok: okFlag, msg, dim });
+  const d = dims.get(dim) || { pass: 0, total: 0, hard: isHard };
+  d.total++; if (okFlag) d.pass++;
+  dims.set(dim, d);
+  console.log(`${okFlag ? 'PASS' : isHard ? 'FAIL' : 'WARN'} [${dim}] ${msg}`);
+}
+
+// ---------- 1. structural invariants (hard) ----------
+{
+  const dim = 'structure';
+  const groupCount = D.n.length;
+  check(dim, true, D.w.length === D.g.length && D.w.length === D.s.length,
+    `parallel arrays consistent (w=${D.w.length} g=${D.g.length} s=${D.s.length})`);
+  check(dim, true, D.f.length === groupCount, `family digits cover every group (f=${D.f.length} n=${groupCount})`);
+  check(dim, true, D.g.every(gid => gid >= 0 && gid < groupCount), 'every primary group id in range');
+  check(dim, true, Object.entries(D.a2).every(([k, arr]) =>
+    +k < D.w.length && arr.every(gid => gid >= 0 && gid < groupCount && gid !== D.g[+k])),
+    'alternate-pronunciation ids valid and distinct from primary');
+  check(dim, true, Object.keys(D.h).every(k => +k < D.w.length), 'homophone indices in range');
+  check(dim, true, (D.x || []).every(i => i >= 0 && i < D.w.length), 'suppressed indices in range');
+  check(dim, true, new Set(D.w).size === D.w.length, 'no duplicate words');
+  check(dim, true, D.w.every(w => /^[a-z]+$/.test(w)), 'every word is plain lowercase a-z (no markup/junk possible)');
+}
+
+// ---------- 2. lookup mirror (same derivation as the browser client) ----------
+const index = new Map();
+D.w.forEach((word, i) => index.set(word, i));
+const groups = [], nearGroups = [];
+const addNear = (gid, i) => {
+  const ng = D.n[gid];
+  if (ng < 0) return;
+  const arr = nearGroups[ng] ||= [];
+  if (arr[arr.length - 1] !== i) arr.push(i);
+};
+D.g.forEach((gid, i) => { (groups[gid] ||= []).push(i); addNear(gid, i); });
+for (const [k, extra] of Object.entries(D.a2)) for (const gid of extra) { (groups[gid] ||= []).push(+k); addNear(gid, +k); }
+groups.forEach(a => a && a.sort((x, y) => x - y));
+nearGroups.forEach(a => a && a.sort((x, y) => x - y));
+const hidden = new Set((D.x || []).map(Number));
+
+function lookup(word) {
+  const i = index.get(word);
+  if (i === undefined) return { known: false, senses: [], homophones: [], all: [] };
+  const gids = [D.g[i], ...(D.a2[i] || [])];
+  const hid = D.h[i];
+  const isHomo = j => hid !== undefined && D.h[j] === hid;
+  const homophones = (groups[D.g[i]] || []).filter(j => j !== i && isHomo(j) && !hidden.has(j)).map(j => D.w[j]);
+  const senses = gids.map(gid => {
+    const members = groups[gid] || [];
+    const inGroup = new Set(members);
+    const perfect = members.filter(j => j !== i && !hidden.has(j) && !isHomo(j)).map(j => D.w[j]);
+    let near = [];
+    const ng = D.n[gid];
+    if (ng >= 0) near = (nearGroups[ng] || []).filter(j => j !== i && !inGroup.has(j) && !hidden.has(j) && !isHomo(j)).map(j => D.w[j]);
+    return { perfect, near, family: +D.f[gid] };
+  });
+  return { known: true, senses, homophones, all: senses.flatMap(s => s.perfect.concat(s.near)) };
+}
+
+// ---------- 3. golden cases ----------
+for (const c of CASES.goldens) {
+  const dim = 'goldens';
+  const r = lookup(c.word);
+  const perfect0 = r.senses[0]?.perfect || [];
+  if (c.mustInclude) check(dim, !!c.hard, c.mustInclude.every(x => perfect0.includes(x)),
+    `${c.word}: perfect includes ${c.mustInclude.join('/')}`);
+  if (c.mustIncludeAny) check(dim, !!c.hard, c.mustIncludeAny.some(x => perfect0.includes(x)),
+    `${c.word}: perfect includes one of ${c.mustIncludeAny.join('/')}`);
+  if (c.mustExclude) check(dim, !!c.hard, c.mustExclude.every(x => !r.all.includes(x)),
+    `${c.word}: never returns ${c.mustExclude.join('/')}`);
+  if (c.nearMustNotInclude) check(dim, !!c.hard, c.nearMustNotInclude.every(x => !r.senses.some(s => s.near.includes(x))),
+    `${c.word}: near tier excludes ${c.nearMustNotInclude.join('/')}`);
+  if (c.expectNoNear) check(dim, !!c.hard, r.senses.every(s => s.near.length === 0),
+    `${c.word}: no near tier (open syllable)`);
+  if (c.expectNoPerfect) check(dim, !!c.hard, r.senses.every(s => s.perfect.length === 0),
+    `${c.word}: no fake exact rhymes`);
+}
+
+// ---------- 4. homographs ----------
+for (const c of CASES.homographs) {
+  const dim = 'homographs';
+  const r = lookup(c.word);
+  if (c.minSenses) check(dim, !!c.hard, r.senses.length >= c.minSenses,
+    `${c.word}: has >=${c.minSenses} pronunciation senses (${r.senses.length})`);
+  for (const grp of c.sensesMustReach || []) check(dim, !!c.hard, grp.some(x => r.all.includes(x)),
+    `${c.word}: reaches ${grp.slice(0, 3).join('/')} group`);
+}
+
+// ---------- 5. homophones ----------
+for (const c of CASES.homophones) {
+  const dim = 'homophones';
+  const r = lookup(c.word);
+  for (const x of c.homophoneIncludes || []) check(dim, !!c.hard, r.homophones.includes(x),
+    `${c.word}: lists ${x} as homophone`);
+  for (const x of c.neverOfferedAsRhyme || []) check(dim, !!c.hard, !r.all.includes(x),
+    `${c.word}: ${x} not offered as a rhyme`);
+}
+
+// ---------- 6. rhyme families ----------
+for (const c of CASES.families) {
+  const dim = 'families';
+  const i = index.get(c.word);
+  check(dim, !!c.hard, i !== undefined && +D.f[D.g[i]] === c.family,
+    `${c.word}: family digit = ${c.family}`);
+}
+
+// ---------- 7. honesty: unknown words ----------
+for (const w of CASES.unknowns.words) {
+  check('honesty', !!CASES.unknowns.hard, lookup(w).known === false, `unknown "${w}" -> honest not-found`);
+}
+
+// ---------- 8. family safety ----------
+for (const w of CASES.familySafety.mustBeAbsent) {
+  check('family-safety', !!CASES.familySafety.hard, index.get(w) === undefined, `profanity "${w[0]}***" absent from dataset`);
+}
+
+// ---------- 9. static client safety checks (index.html; static, not executed) ----------
+{
+  const dim = 'client-static';
+  const s = html.lastIndexOf('<script>');
+  const e = html.indexOf('</script>', s);
+  const script = s >= 0 && e > s ? html.slice(s + 8, e) : '';
+  let parses = true;
+  try { new Function(script); } catch { parses = false; }
+  check(dim, true, script.length > 500 && parses, 'inline client script parses (no SyntaxError)');
+  check(dim, true, script.includes('if (!word) return;'), 'empty input is a no-op (static check)');
+  check(dim, true, (script.match(/\.textContent = word/g) || []).length >= 2,
+    'query word rendered via textContent (escaping preserved, static check)');
+  check(dim, true, !script.includes('${word}'), 'no raw ${word} interpolation in client script');
+  const fetches = script.match(/fetch\('([^']+)'/g) || [];
+  check(dim, true, fetches.length === 1 && fetches[0].includes('data/rhymes.min.json'),
+    'only runtime fetch is same-origin data/rhymes.min.json');
+  const ext = html.match(/<script[^>]*\bsrc=[^>]*>/g) || [];
+  check(dim, true, ext.length === 1 && ext[0].includes('adsbygoogle.js') && ext[0].includes('ca-pub-6286935824893984'),
+    'only external script is the unchanged AdSense loader');
+}
+
+// ---------- 10. payload budgets ----------
+const gz = gzipSync(raw).length;
+{
+  const dim = 'payload';
+  const allowLarge = process.env.AUDIT_ALLOW_LARGE === '1';
+  check(dim, !allowLarge, gz < 100_000, `gzipped payload under 100 KB (${gz} B)${allowLarge ? ' [override active]' : ''}`);
+  check(dim, false, gz < 90_000, `gzipped payload under 90 KB soft budget (${gz} B)`);
+  check(dim, false, raw.length < 250_000, `raw payload under 250 KB (${raw.length} B)`);
+}
+
+// ---------- 11. license / notice / operational checks ----------
+{
+  const dim = 'license-ops';
+  check(dim, true, existsSync('data/NOTICE.md') && /Carnegie Mellon University/.test(readFileSync('data/NOTICE.md', 'utf8'))
+    && /Creative Commons Attribution 3\.0/.test(readFileSync('data/NOTICE.md', 'utf8')),
+    'data/NOTICE.md carries CMU notice + CC-BY 3.0 attribution');
+  check(dim, true, existsSync('data/SOURCES.md') && /gwordlist/.test(readFileSync('data/SOURCES.md', 'utf8')),
+    'data/SOURCES.md exists and names the frequency source');
+  const blob = raw.toString();
+  check(dim, true, !/first20hours|google-10000|10000-english/i.test(blob),
+    'generated data has no removed-source reference');
+  check(dim, true, !/first20hours|MIT/.test(readFileSync('tools/build-rhyme-data.mjs', 'utf8')),
+    'builder has no removed-source reference or stray MIT claim');
+  check(dim, true, /Carnegie Mellon/.test(D._m.attribution) && /books\.google\.com\/ngrams/.test(D._m.attribution),
+    'JSON _m.attribution names CMU and Google Books Ngram');
+  const ads = existsSync('ads.txt') ? readFileSync('ads.txt', 'utf8').trim() : '';
+  check(dim, true, ads === 'google.com, pub-6286935824893984, DIRECT, f08c47fec0942fa0',
+    'ads.txt exists with the exact single AdSense line');
+}
+
+// ---------- 12. dataset-wide sweep (advisory; feeds the backlog) ----------
+const sweep = {};
+{
+  const dim = 'sweep';
+  // Common words with zero offered perfect rhymes = coverage candidates.
+  sweep.coverageCandidates = [];
+  for (let i = 0; i < Math.min(2000, D.w.length); i++) {
+    if (hidden.has(i)) continue;
+    const r = lookup(D.w[i]);
+    if (r.senses.every(se => se.perfect.length === 0)) sweep.coverageCandidates.push({ word: D.w[i], rank: i });
+  }
+  check(dim, false, sweep.coverageCandidates.length <= 120,
+    `top-2000 words with zero offered perfect rhymes: ${sweep.coverageCandidates.length} (coverage candidates)`);
+
+  // Largest near groups = places to eyeball for slant-rhyme junk.
+  sweep.bigNear = nearGroups
+    .map((arr, ng) => ({ ng, size: (arr || []).length, sample: (arr || []).slice(0, 6).map(j => D.w[j]) }))
+    .filter(x => x.size > 0).sort((a, b) => b.size - a.size).slice(0, 5);
+  check(dim, false, (sweep.bigNear[0]?.size || 0) <= 220,
+    `largest near group size: ${sweep.bigNear[0]?.size || 0} (sample: ${sweep.bigNear[0]?.sample.join(', ') || '-'})`);
+
+  // Homograph / homophone / suppression coverage numbers (informational).
+  sweep.altWords = Object.keys(D.a2).length;
+  sweep.homophoneWords = Object.keys(D.h).length;
+  sweep.suppressed = (D.x || []).length;
+  check(dim, false, sweep.altWords > 500, `homograph coverage: ${sweep.altWords} words carry alternate pronunciations`);
+  check(dim, false, sweep.homophoneWords > 100, `homophone coverage: ${sweep.homophoneWords} words in homophone groups`);
+}
+
+// ---------- report ----------
+const hardFail = hard.filter(c => !c.ok);
+const advFail = advisory.filter(c => !c.ok);
+console.log('\n================ RHYME QUALITY REPORT ================');
+console.log(`words=${D.w.length} perfectKeys=${D._m.perfectKeys} payload=${raw.length}B raw / ${gz}B gz`);
+console.log('\nPer-dimension results (pass/total):');
+for (const [dim, d] of dims) console.log(`  ${dim.padEnd(14)} ${d.pass}/${d.total}${d.hard ? '' : '  (advisory)'}`);
+console.log(`\nHARD BLOCKERS: ${hardFail.length === 0 ? 'PASS — all hard checks green, safe to ship' : `FAIL — ${hardFail.length} blocker(s)`}`);
+hardFail.forEach(c => console.log(`  BLOCKER: [${c.dim}] ${c.msg}`));
+console.log(`Advisory items open: ${advFail.length} (trend/backlog only — never a gate)`);
+advFail.forEach(c => console.log(`  advisory: [${c.dim}] ${c.msg}`));
+
+// ---------- backlog ----------
+if (WRITE_BACKLOG) {
+  const cc = sweep.coverageCandidates.slice(0, 15);
+  const md = `# Rhyme Quality Backlog
+
+Generated by \`node tools/audit-rhyme-quality.mjs --backlog\` — regenerate after
+any data/engine change. Everything below is derived from the committed
+\`data/rhymes.min.json\`; **no user search data exists or is ever collected**
+(the privacy policy promises searches never leave the browser). Items marked
+*speculative* are judgment calls for the owner, not measurements.
+
+## Current status
+- Hard blockers: **${hardFail.length === 0 ? 'NONE — all hard checks pass' : hardFail.length + ' FAILING'}**
+- Advisory items open: ${advFail.length}
+- Dataset: ${D.w.length} words, ${D._m.perfectKeys} perfect keys, ${sweep.altWords} homograph words, ${sweep.homophoneWords} homophone words, ${sweep.suppressed} suppressed glue words
+- Payload: ${raw.length} B raw / ${gz} B gzipped (hard ceiling 100 KB, soft budget 90 KB)
+
+## Hard blockers
+${hardFail.length ? hardFail.map(c => `- [${c.dim}] ${c.msg}`).join('\n') : '- None.'}
+
+## Candidate improvements (measured)
+- **Coverage gaps:** ${sweep.coverageCandidates.length} of the top-2000 words have zero offered perfect rhymes. Highest-frequency examples: ${cc.map(c => `${c.word} (#${c.rank})`).join(', ')}. Most are genuinely rhyme-poor in English (natural singletons); a curated near-rhyme seed for the worst offenders is the plausible fix. *Speculative: which of these users actually search.*
+- **Largest near groups (eyeball for junk):**
+${sweep.bigNear.map(b => `  - near-group #${b.ng}: ${b.size} words — sample: ${b.sample.join(', ')}`).join('\n')}
+${advFail.length ? '- **Open advisory checks:**\n' + advFail.map(c => `  - [${c.dim}] ${c.msg}`).join('\n') : ''}
+
+## Deferred ideas (speculative — owner decision required)
+- Pin CMUdict/gwordlist to specific upstream commits in the builder so rebuilds are reproducible (currently fetches latest).
+- Extract the lookup mirror (client / test-rhymes / this audit each carry a copy) into a shared \`tools/lib-rhyme-lookup.mjs\`; refactor client to match at next engine change.
+- Content-hashed data filename + immutable caching (group ids renumber per build).
+- Vocabulary expansion toward ~20k words (~110–130 KB gz estimated — would need the AUDIT_ALLOW_LARGE ceiling decision).
+- Git pre-push hook running this audit (convention today: run it manually before any push).
+- jsdom-based UI regression suite lives outside the repo (scratchpad) to keep the repo dependency-free; adopt into repo only if a devDependency is ever accepted.
+
+## Never doing (by policy)
+- No user-search logging or feedback telemetry (contradicts the live privacy promise).
+- No AI-generated rhyme output, no runtime APIs, no scraping, no lyrics data.
+`;
+  writeFileSync('docs/RHYME_QUALITY_BACKLOG.md', md);
+  console.log('\nwrote docs/RHYME_QUALITY_BACKLOG.md');
+}
+
+process.exit(hardFail.length ? 1 : 0);

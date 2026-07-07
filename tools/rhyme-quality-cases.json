@@ -1,0 +1,33 @@
+{
+  "_comment": "Golden rhyme-quality cases for tools/audit-rhyme-quality.mjs. 'hard' cases gate (nonzero exit on failure); advisory cases report only. Words listed here must be judged against the committed data/rhymes.min.json. Edit this file (not the audit script) to add cases; keep every case objective.",
+  "goldens": [
+    { "word": "horse", "hard": true, "mustInclude": ["course", "force", "source"], "mustExclude": ["base", "case", "chase", "erase"] },
+    { "word": "time", "hard": true, "mustInclude": ["rhyme", "climb", "prime"], "nearMustNotInclude": ["like", "site", "life", "price", "ride"] },
+    { "word": "love", "hard": true, "mustInclude": ["above", "dove", "glove"] },
+    { "word": "day", "hard": true, "mustIncludeAny": ["way", "say", "play", "stay", "away"], "expectNoNear": true },
+    { "word": "night", "hard": true, "mustIncludeAny": ["light", "right", "write", "sight", "bright"] },
+    { "word": "orange", "hard": true, "expectNoPerfect": true },
+    { "word": "playground", "hard": true, "mustIncludeAny": ["ground", "sound", "found", "around"] },
+    { "word": "heart", "hard": false, "mustIncludeAny": ["start", "part", "apart", "art"] },
+    { "word": "fire", "hard": false, "mustIncludeAny": ["desire", "wire", "hire", "inspire"] },
+    { "word": "song", "hard": false, "mustIncludeAny": ["long", "strong", "along", "wrong"] },
+    { "word": "moon", "hard": false, "mustIncludeAny": ["soon", "noon", "spoon", "tune"] }
+  ],
+  "homographs": [
+    { "word": "live", "hard": true, "minSenses": 2, "sensesMustReach": [["give", "forgive"], ["five", "drive", "alive"]] },
+    { "word": "read", "hard": true, "minSenses": 2, "sensesMustReach": [["red", "bed", "head", "said"], ["need", "feed", "speed", "indeed"]] },
+    { "word": "wind", "hard": true, "minSenses": 2, "sensesMustReach": [["find", "kind", "mind", "behind"]] },
+    { "word": "lead", "hard": true, "minSenses": 2, "sensesMustReach": [["red", "bed", "head", "said"], ["need", "feed", "speed", "indeed"]] }
+  ],
+  "homophones": [
+    { "word": "sea", "hard": true, "homophoneIncludes": ["see"], "neverOfferedAsRhyme": ["see"] },
+    { "word": "see", "hard": true, "homophoneIncludes": ["sea"], "neverOfferedAsRhyme": ["sea"] }
+  ],
+  "families": [
+    { "word": "day", "hard": true, "family": 1 },
+    { "word": "money", "hard": true, "family": 2 },
+    { "word": "family", "hard": true, "family": 3 }
+  ],
+  "unknowns": { "hard": true, "words": ["blorfing", "zzqwv", "snarfle"] },
+  "familySafety": { "hard": true, "mustBeAbsent": ["fuck", "shit", "cunt", "nigger", "faggot"] }
+}
