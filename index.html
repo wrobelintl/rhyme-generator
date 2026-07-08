@@ -9,103 +9,163 @@
   <meta name="keywords" content="rhyme generator, rhyming words, find rhymes, online rhyme tool, words that rhyme, poem rhyme finder">
   <link rel="canonical" href="https://findmyrhyme.com/">
   <style>
+    :root { color-scheme: light dark; }
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); min-height: 100vh; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); min-height: 100vh; color: #2d3748; }
     header { color: white; padding: 1.5rem 1.5rem 0.5rem; text-align: center; }
     header h1 { font-size: 1.8rem; font-weight: 800; letter-spacing: -0.5px; }
-    header p { opacity: 0.9; font-size: 0.95rem; margin-top: 0.35rem; }
+    header p { opacity: 0.92; font-size: 0.95rem; margin-top: 0.4rem; max-width: 34rem; margin-left: auto; margin-right: auto; }
     main { max-width: 720px; margin: 1.5rem auto; padding: 0 1rem 3rem; }
-    .card { background: white; border-radius: 16px; padding: 2rem; box-shadow: 0 8px 40px rgba(0,0,0,0.15); margin-bottom: 1.5rem; }
+    .card { background: #ffffff; border-radius: 16px; padding: 1.75rem; box-shadow: 0 8px 40px rgba(0,0,0,0.15); margin-bottom: 1.5rem; }
     .input-row { display: flex; gap: 0.75rem; }
     input[type="text"] {
-      flex: 1; padding: 0.9rem 1.25rem; border: 2px solid #e2e8f0;
-      border-radius: 10px; font-size: 1.15rem; transition: border-color 0.2s;
+      flex: 1; min-width: 0; padding: 0.9rem 1.25rem; border: 2px solid #e2e8f0;
+      border-radius: 10px; font-size: 1.15rem; transition: border-color 0.2s; background: #fff; color: #1a202c;
     }
     input[type="text"]:focus { outline: none; border-color: #667eea; }
     .btn { padding: 0.9rem 1.5rem; background: #667eea; color: white; border: none; border-radius: 10px; font-size: 1rem; font-weight: 700; cursor: pointer; transition: background 0.2s; white-space: nowrap; }
     .btn:hover { background: #5a67d8; }
-    .filter-row { display: flex; gap: 0.5rem; margin-top: 1rem; flex-wrap: wrap; align-items: center; }
-    .filter-label { font-size: 0.85rem; color: #718096; }
-    .filter-btn { padding: 0.3rem 0.85rem; border-radius: 99px; border: 2px solid #e2e8f0; background: white; font-size: 0.82rem; cursor: pointer; font-weight: 600; color: #4a5568; transition: all 0.15s; }
-    .filter-btn.active { background: #667eea; border-color: #667eea; color: white; }
-    .results { margin-top: 1.5rem; }
-    .syllable-group { margin-bottom: 1.25rem; }
-    .syllable-label { font-size: 0.78rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; color: #718096; margin-bottom: 0.5rem; }
+    .privacy-note { margin-top: 0.6rem; font-size: 0.78rem; color: #718096; display: flex; align-items: center; gap: 0.35rem; }
+    .examples { display: flex; flex-wrap: wrap; gap: 0.4rem; align-items: center; margin-top: 0.9rem; }
+    .ex-label { font-size: 0.8rem; color: #718096; margin-right: 0.15rem; }
+    .chip { padding: 0.32rem 0.8rem; border-radius: 99px; border: 1px solid #d9e0ee; background: #f4f6fc; font-size: 0.82rem; cursor: pointer; font-weight: 600; color: #4756a8; transition: all 0.15s; }
+    .chip:hover { background: #667eea; border-color: #667eea; color: #fff; }
+
+    .toolbar { display: flex; flex-wrap: wrap; gap: 0.75rem 1.1rem; align-items: center; margin: 1.1rem 0 0.25rem; }
+    .tb-group { display: flex; align-items: center; gap: 0.35rem; flex-wrap: wrap; }
+    .tb-label { font-size: 0.75rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: #a0aec0; margin-right: 0.15rem; }
+    .seg-btn, .toggle-btn { padding: 0.3rem 0.8rem; border-radius: 8px; border: 1px solid #e2e8f0; background: #fff; font-size: 0.82rem; cursor: pointer; font-weight: 600; color: #4a5568; transition: all 0.15s; }
+    .seg-btn:hover, .toggle-btn:hover { border-color: #b9c2f0; }
+    .seg-btn.active { background: #667eea; border-color: #667eea; color: #fff; }
+    .toggle-btn.active { background: #edf0fe; border-color: #b9c2f0; color: #4756a8; }
+
+    .results { margin-top: 1.25rem; }
+    .results-head { display: flex; justify-content: space-between; align-items: center; gap: 0.75rem; flex-wrap: wrap; }
+    .results-title { font-size: 0.98rem; font-weight: 700; color: #2d3748; }
+    .results-title .count { font-weight: 500; color: #a0aec0; font-size: 0.85rem; }
+    .copy-btn { padding: 0.4rem 0.9rem; border-radius: 8px; border: 1px solid #cbd5e0; background: #fff; font-size: 0.82rem; font-weight: 700; color: #4a5568; cursor: pointer; transition: all 0.15s; white-space: nowrap; }
+    .copy-btn:hover { border-color: #667eea; color: #667eea; }
+    .copy-btn.done { background: #e6fffa; border-color: #81e6d9; color: #2c7a7b; }
+
+    .sense-head { font-size: 0.9rem; font-weight: 700; color: #2d3748; margin: 1.4rem 0 0.35rem; }
+    .section-title { font-size: 0.82rem; font-weight: 700; color: #4a5568; margin: 1.1rem 0 0.5rem; }
+    .section-title .section-count { color: #a0aec0; font-weight: 600; }
+    .syllable-group { margin-bottom: 1rem; }
+    .syllable-label { font-size: 0.72rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.07em; color: #a0aec0; margin: 0.5rem 0 0.4rem; }
     .rhyme-grid { display: flex; flex-wrap: wrap; gap: 0.4rem; }
     .rhyme-word { padding: 0.4rem 0.85rem; background: #f7fafc; border: 1px solid #e2e8f0; border-radius: 99px; font-size: 0.9rem; color: #2d3748; cursor: pointer; transition: all 0.15s; }
     .rhyme-word:hover { background: #667eea; color: white; border-color: #667eea; }
-    .empty { color: #a0aec0; font-size: 0.95rem; text-align: center; padding: 2rem; }
+    .hint { font-size: 0.8rem; color: #718096; margin: 0.35rem 0 0.25rem; }
+    .linklike { background: none; border: none; color: #667eea; font: inherit; font-weight: 700; cursor: pointer; padding: 0; text-decoration: underline; }
+    .empty { color: #718096; font-size: 0.95rem; text-align: center; padding: 1.75rem 0.5rem; line-height: 1.6; }
+    .empty em { color: #4a5568; font-style: normal; font-weight: 700; }
+
     .content-section { color: #4a5568; line-height: 1.7; }
-    .content-section h2 { color: #2d3748; font-size: 1rem; margin: 1.25rem 0 0.4rem; }
+    .content-section h2 { color: #2d3748; font-size: 1.05rem; margin: 1.4rem 0 0.45rem; }
+    .content-section h2:first-child { margin-top: 0; }
     .content-section ul { padding-left: 1.25rem; }
     .content-section li { margin-bottom: 0.3rem; }
+    .content-section details { border: 1px solid #e2e8f0; border-radius: 10px; padding: 0.5rem 0.9rem; margin: 0.6rem 0; }
+    .content-section summary { cursor: pointer; font-weight: 700; color: #2d3748; font-size: 0.92rem; }
+    .content-section details p { margin-top: 0.5rem; font-size: 0.9rem; }
     .faq-item { border-top: 1px solid #e2e8f0; padding: 0.85rem 0; }
-    .faq-q { font-weight: 600; color: #2d3748; margin-bottom: 0.25rem; font-size: 0.9rem; }
-    footer { text-align: center; padding: 1.5rem; color: rgba(255,255,255,0.7); font-size: 0.82rem; }
-    footer a { color: rgba(255,255,255,0.7); margin: 0 0.5rem; }
+    .faq-q { font-weight: 700; color: #2d3748; margin-bottom: 0.25rem; font-size: 0.92rem; }
+    .faq-a { font-size: 0.9rem; }
+    footer { text-align: center; padding: 1.5rem; color: rgba(255,255,255,0.75); font-size: 0.82rem; }
+    footer a { color: rgba(255,255,255,0.8); margin: 0 0.5rem; }
+
+    @media (prefers-color-scheme: dark) {
+      body { background: linear-gradient(135deg, #232136 0%, #2a1e3a 100%); color: #e2e8f0; }
+      .card { background: #1e2030; box-shadow: 0 8px 40px rgba(0,0,0,0.4); }
+      input[type="text"] { background: #14161f; border-color: #333a4d; color: #edf0f7; }
+      input[type="text"]:focus { border-color: #8ea2f2; }
+      .privacy-note, .ex-label, .hint, .empty { color: #9aa4b8; }
+      .chip { background: #262a3b; border-color: #3a4157; color: #b9c2ee; }
+      .chip:hover { background: #667eea; border-color: #667eea; color: #fff; }
+      .tb-label, .results-title .count, .section-title .section-count, .syllable-label { color: #7c8598; }
+      .seg-btn, .toggle-btn, .copy-btn { background: #262a3b; border-color: #3a4157; color: #cbd5e0; }
+      .seg-btn.active { background: #667eea; border-color: #667eea; color: #fff; }
+      .toggle-btn.active { background: #2f3350; border-color: #4a5480; color: #c3ccf5; }
+      .copy-btn:hover { border-color: #8ea2f2; color: #a9b7f7; }
+      .copy-btn.done { background: #1c3a37; border-color: #2c7a7b; color: #7fe0d5; }
+      .results-title, .sense-head, .faq-q, .content-section h2, .content-section summary, .empty em { color: #edf0f7; }
+      .section-title, .content-section { color: #b6c0d4; }
+      .rhyme-word { background: #262a3b; border-color: #3a4157; color: #dbe2f0; }
+      .rhyme-word:hover { background: #667eea; border-color: #667eea; color: #fff; }
+      .content-section details { border-color: #333a4d; }
+      .faq-item { border-color: #333a4d; }
+    }
   </style>
   <script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-6286935824893984" crossorigin="anonymous"></script>
 </head>
 <body>
 
 <header>
-  <h1> Rhyme Generator</h1>
-  <p>Find perfect rhymes for any word — free, instant, no sign-up</p>
+  <h1>Rhyme Generator</h1>
+  <p>A free rhyme finder for songwriters, rappers, poets, and writers — pronunciation-based, instant, no sign-up.</p>
 </header>
 
 <main>
   <div class="card">
     <div class="input-row">
-      <input type="text" id="wordInput" placeholder="Enter a word (e.g. moon, love, day)..." onkeydown="if(event.key==='Enter')findRhymes()">
-      <button class="btn" onclick="findRhymes()">Find Rhymes</button>
+      <input type="text" id="wordInput" aria-label="Word to find rhymes for" placeholder="Enter a word (e.g. moon, love, day)..." autocomplete="off" autocapitalize="none" spellcheck="false" enterkeyhint="search" onkeydown="if(event.key==='Enter')findRhymes()">
+      <button type="button" class="btn" onclick="findRhymes()">Find Rhymes</button>
     </div>
 
-    <div class="filter-row">
-      <span class="filter-label">Filter by syllables:</span>
-      <button class="filter-btn active" onclick="filterBy('all', this)">All</button>
-      <button class="filter-btn" onclick="filterBy(1, this)">1 syllable</button>
-      <button class="filter-btn" onclick="filterBy(2, this)">2 syllables</button>
-      <button class="filter-btn" onclick="filterBy(3, this)">3 syllables</button>
+    <div class="privacy-note">Private by design — your searches run in your browser and are never sent to a server.</div>
+
+    <div class="examples">
+      <span class="ex-label">Try:</span>
+      <button type="button" class="chip" onclick="runExample('love')">love</button>
+      <button type="button" class="chip" onclick="runExample('time')">time</button>
+      <button type="button" class="chip" onclick="runExample('day')">day</button>
+      <button type="button" class="chip" onclick="runExample('night')">night</button>
+      <button type="button" class="chip" onclick="runExample('horse')">horse</button>
+      <button type="button" class="chip" onclick="runExample('orange')">orange</button>
     </div>
 
     <div class="results" id="results">
-      <div class="empty">Enter a word above to find rhymes </div>
+      <div class="empty">Enter a word above to find rhymes.</div>
     </div>
   </div>
 
   <div class="card content-section">
-    <h2>How to Use the Rhyme Generator</h2>
-    <p>Type any word into the search box and click "Find Rhymes." Results are grouped by syllable count so you can quickly find the perfect rhyme for your poem, song, or creative writing.</p>
+    <h2>A rhyme finder built for writing, not guessing</h2>
+    <p>FindMyRhyme matches words by how they are <strong>pronounced</strong>, not just how they are spelled — so you get real rhymes (and honest gaps) instead of look-alikes. Common, usable words are shown first, grouped by syllable count to fit your meter.</p>
 
-    <h2>Who Uses a Rhyme Generator?</h2>
+    <details>
+      <summary>Perfect vs. near rhymes — which should I use?</summary>
+      <p><strong>Perfect rhymes</strong> end in exactly the same sound (<em>cat / hat</em>, <em>horse / course</em>) — clean and expected. <strong>Near rhymes</strong> (slant rhymes) share a similar ending but are not identical (<em>time / line</em>) — great for keeping lyrics fresh or escaping an overused perfect rhyme. Turn <em>Near rhymes</em> off when you want exact matches only.</p>
+    </details>
+
+    <details>
+      <summary>What is a homophone?</summary>
+      <p>Homophones sound <em>identical</em> to your word (<em>sea / see</em>, <em>their / there</em>). Because they sound the same rather than rhyme, we list them separately — handy for wordplay, but not a rhyme for your line.</p>
+    </details>
+
+    <h2>Who it is for</h2>
     <ul>
-      <li><strong>Songwriters</strong> — finding lyrics that flow naturally</li>
-      <li><strong>Poets</strong> — discovering unexpected rhyme connections</li>
-      <li><strong>Teachers &amp; Students</strong> — exploring phonics and language patterns</li>
-      <li><strong>Rappers &amp; Spoken word artists</strong> — building rhyme schemes quickly</li>
-      <li><strong>Writers</strong> — adding rhythm to prose or speeches</li>
+      <li><strong>Songwriters &amp; rappers</strong> — build rhyme schemes and find the next line fast</li>
+      <li><strong>Poets</strong> — match meter using syllable grouping and slant rhymes</li>
+      <li><strong>Teachers &amp; students</strong> — explore phonics, rhyme sounds, and homophones</li>
+      <li><strong>Writers &amp; speechwriters</strong> — add rhythm and punch to prose</li>
     </ul>
 
-    <h2>Types of Rhymes</h2>
-    <ul>
-      <li><strong>Perfect rhymes</strong> — words that end with the same sound (cat/hat)</li>
-      <li><strong>Near rhymes</strong> — words with similar but not identical endings (moon/June)</li>
-      <li><strong>Eye rhymes</strong> — words that look alike but sound different (love/move)</li>
-      <li><strong>Multi-syllable rhymes</strong> — longer rhyming matches (beautiful/dutiful)</li>
-    </ul>
+    <h2>How to use it</h2>
+    <p>Type a word and press Enter. Filter by syllable count, switch between syllable grouping and A–Z order, turn off near rhymes for exact-only mode, then use <strong>Copy all</strong> to drop the list into your draft. Tap any result to rhyme that word next.</p>
 
     <div style="margin-top:1rem">
       <div class="faq-item">
         <div class="faq-q">How does the rhyme generator work?</div>
-        <div style="font-size:0.9rem">The tool matches words based on their ending phoneme patterns — the sounds at the end of the word. It groups results by syllable count to help you find rhymes that fit your rhythm.</div>
+        <div class="faq-a">It compares the ending sounds of each word using a pronunciation dictionary, then groups the matches by syllable count. Everything runs in your browser — nothing is sent to a server.</div>
       </div>
       <div class="faq-item">
-        <div class="faq-q">Is it free?</div>
-        <div style="font-size:0.9rem">Yes — free to use, with no sign-up and no usage limits. The site is supported by ads, which lets us keep the rhyme generator free for everyone.</div>
+        <div class="faq-q">Is it free and private?</div>
+        <div class="faq-a">Yes — free to use, no sign-up, no usage limits. Your searches stay on your device and are never stored or shared. Ads keep the tool free for everyone.</div>
       </div>
       <div class="faq-item">
-        <div class="faq-q">Can I use this for Wordle or word games?</div>
-        <div style="font-size:0.9rem">Yes — finding words with specific endings is very useful for word games that require pattern matching.</div>
+        <div class="faq-q">Why did my word return nothing?</div>
+        <div class="faq-a">Either it is not in our dictionary of common words, or it genuinely has no perfect rhyme in English (like <em>orange</em>). We would rather show nothing than invent a fake rhyme.</div>
       </div>
     </div>
   </div>
@@ -121,7 +181,7 @@
 // FindMyRhyme - pronunciation-based rhyme lookup (license-safe data format).
 // Data: data/rhymes.min.json (same-origin static file generated at build time by
 // tools/build-rhyme-data.mjs from CMUdict + Google Books Ngram ranks; licenses
-// and attribution in data/NOTICE.md). No runtime API/backend.
+// and attribution in data/NOTICE.md). No runtime API/backend, no telemetry.
 // Format: w = words in frequency order; g = primary perfect-group id per word;
 //         a2 = sparse extra group ids from alternate pronunciations (homographs);
 //         s = syllable digit per word; n = near-group id per perfect group
@@ -133,7 +193,9 @@ let DB = null;
 let dataError = false;
 let pendingWord = null;
 let currentRhymes = null;
-let currentFilter = 'all';
+let currentFilter = 'all';        // syllable filter: 'all' | 1 | 2 | 3
+let currentSort = 'syllables';    // 'syllables' (grouped, common-first) | 'az'
+let includeNear = true;           // show the near-rhyme tier
 
 fetch('data/rhymes.min.json')
   .then(function (r) { if (!r.ok) throw new Error('load'); return r.json(); })
@@ -179,6 +241,11 @@ function findRhymes() {
   lookup(word);
 }
 
+function runExample(w) {
+  document.getElementById('wordInput').value = w;
+  findRhymes();
+}
+
 function lookup(word) {
   const i = DB.index.get(word);
   if (i === undefined) {
@@ -215,11 +282,23 @@ function lookup(word) {
   renderRhymes();
 }
 
-function filterBy(syl, btn) {
-  currentFilter = syl;
-  document.querySelectorAll('.filter-btn').forEach(function (b) { b.classList.remove('active'); });
-  btn.classList.add('active');
-  if (currentRhymes && currentRhymes.word) renderRhymes();
+// --- writer controls (all pure client re-orders/filters of already-loaded data) ---
+function setSyllable(val) { currentFilter = val; renderRhymes(); }
+function setSort(val) { currentSort = val; renderRhymes(); }
+function toggleNear() { includeNear = !includeNear; renderRhymes(); }
+function resetFilters() { currentFilter = 'all'; currentSort = 'syllables'; includeNear = true; renderRhymes(); }
+
+function sylMatch(w) { return currentFilter === 'all' || sylOf(w) === currentFilter; }
+function sortMaybe(list) { return currentSort === 'az' ? list.slice().sort() : list; }
+
+// Filter + sort + cap each sense the same way for display AND copy (WYSIWYG).
+function computeSenses() {
+  if (!currentRhymes || !currentRhymes.known) return [];
+  return currentRhymes.senses.map(function (sense) {
+    const perfect = sortMaybe(sense.perfect.filter(sylMatch)).slice(0, 60);
+    const near = includeNear ? sortMaybe(sense.near.filter(sylMatch)).slice(0, 18) : [];
+    return { perfect: perfect, near: near, family: sense.family };
+  });
 }
 
 function renderMessage(msg) {
@@ -228,9 +307,15 @@ function renderMessage(msg) {
   results.querySelector('.empty').textContent = msg;
 }
 
+function esc(w) {
+  // rhyme words come only from the dataset (validated /^[a-z]+$/), so they are
+  // injection-safe; this keeps the single-quote-in-onclick contract obvious.
+  return w;
+}
+
 function chipGrid(list) {
   return '<div class="rhyme-grid">' + list.map(function (w) {
-    return '<div class="rhyme-word" onclick="document.getElementById(\'wordInput\').value=\'' + w + '\';findRhymes()">' + w + '</div>';
+    return '<div class="rhyme-word" onclick="runExample(\'' + esc(w) + '\')">' + w + '</div>';
   }).join('') + '</div>';
 }
 
@@ -243,52 +328,162 @@ function syllableGroups(list) {
   }).join('');
 }
 
-var FAMILY_LABEL = { 1: 'masculine rhyme (stressed final syllable)', 2: 'feminine rhyme (2-syllable rhyme sound)', 3: 'dactylic rhyme (3-syllable rhyme sound)' };
+function renderPerfect(list) {
+  return currentSort === 'az' ? chipGrid(list) : syllableGroups(list);
+}
+
+function sectionLabel(text, n) {
+  return '<div class="section-title">' + text + ' <span class="section-count">(' + n + ')</span></div>';
+}
+
+function familyHint(fam) {
+  if (fam === 2) return '<div class="hint">These share a two-syllable rhyme sound (feminine rhyme).</div>';
+  if (fam === 3) return '<div class="hint">These share a three-syllable rhyme sound (dactylic rhyme).</div>';
+  return '';
+}
+
+function segBtn(label, isActive, call) {
+  return '<button type="button" class="seg-btn' + (isActive ? ' active' : '') + '" onclick="' + call + '">' + label + '</button>';
+}
+
+function toolbarHtml(hasNear) {
+  const syl = segBtn('All', currentFilter === 'all', "setSyllable('all')")
+    + segBtn('1', currentFilter === 1, 'setSyllable(1)')
+    + segBtn('2', currentFilter === 2, 'setSyllable(2)')
+    + segBtn('3', currentFilter === 3, 'setSyllable(3)');
+  const sort = segBtn('Syllables', currentSort === 'syllables', "setSort('syllables')")
+    + segBtn('A–Z', currentSort === 'az', "setSort('az')");
+  let tb = '<div class="toolbar">'
+    + '<div class="tb-group"><span class="tb-label">Syllables</span>' + syl + '</div>'
+    + '<div class="tb-group"><span class="tb-label">Sort</span>' + sort + '</div>';
+  if (hasNear) {
+    // Only offer the near-rhyme toggle when this word actually has a near tier.
+    tb += '<div class="tb-group"><button type="button" class="toggle-btn' + (includeNear ? ' active' : '')
+      + '" aria-pressed="' + includeNear + '" onclick="toggleNear()">Near rhymes: ' + (includeNear ? 'On' : 'Off') + '</button></div>';
+  }
+  return tb + '</div>';
+}
 
 function renderRhymes() {
   const results = document.getElementById('results');
   const word = currentRhymes.word;
-  const flt = function (w) { return currentFilter === 'all' || sylOf(w) === currentFilter; };
 
   if (!currentRhymes.known) {
-    results.innerHTML = '<div class="empty">"<strong class="qw"></strong>" is not in our rhyming dictionary, so we cannot suggest reliable rhymes.</div>';
+    results.innerHTML = '<div class="empty">“<strong class="qw"></strong>” is not in our rhyming dictionary yet. Double-check the spelling, or try a simpler base word — for example search <em>light</em> instead of <em>moonlight</em>.</div>';
     results.querySelector('.qw').textContent = word;
     return;
   }
 
-  const senses = currentRhymes.senses.map(function (sense) {
-    return { perfect: sense.perfect.filter(flt).slice(0, 60), near: sense.near.filter(flt).slice(0, 18), family: sense.family };
-  });
-  const homophones = currentRhymes.homophones.filter(flt);
+  const rawHas = currentRhymes.senses.some(function (s) { return s.perfect.length || s.near.length; });
+  const homophones = currentRhymes.homophones.filter(sylMatch);
+
+  if (!rawHas) {
+    if (homophones.length) {
+      results.innerHTML = '<div class="results-head"><div class="results-title">“<span class="qw"></span>”</div></div>'
+        + '<div class="empty" style="padding:0.75rem 0">No perfect or near rhymes for this word in our dictionary — but it has homophones.</div>'
+        + sectionLabel('Homophones — sound the same, not rhymes', homophones.length)
+        + '<p class="hint">Homophones sound identical to your word, so they are not true rhymes.</p>'
+        + chipGrid(homophones);
+      results.querySelectorAll('.qw').forEach(function (el) { el.textContent = word; });
+      return;
+    }
+    results.innerHTML = '<div class="empty">No perfect rhymes for “<strong class="qw"></strong>”. Some words — famously <em>orange</em>, <em>silver</em>, and <em>month</em> — have no perfect rhyme in English. Try a near rhyme or a related word.</div>';
+    results.querySelector('.qw').textContent = word;
+    return;
+  }
+
+  const senses = computeSenses();
   const total = senses.reduce(function (t, s) { return t + s.perfect.length + s.near.length; }, 0);
+  const hasNear = currentRhymes.senses.some(function (s) { return s.near.length; });
 
-  if (total === 0 && homophones.length === 0) {
-    results.innerHTML = '<div class="empty">No strong exact rhymes found for "<strong class="qw"></strong>".</div>';
-    results.querySelector('.qw').textContent = word;
-    return;
+  let html = '<div class="results-head"><div class="results-title">Rhymes for “<span class="qw"></span>”'
+    + (total ? ' <span class="count">· ' + total + (total === 1 ? ' result' : ' results') + '</span>' : '')
+    + '</div><button type="button" class="copy-btn" onclick="copyAll(this)">Copy all</button></div>'
+    + toolbarHtml(hasNear)
+    + '<p class="hint">Tip: tap any word to rhyme it next.</p>';
+
+  if (total === 0) {
+    html += '<div class="empty" style="padding:1.25rem 0">No rhymes match these filters. <button type="button" class="linklike" onclick="resetFilters()">Reset filters</button></div>';
+  } else {
+    senses.forEach(function (sense, k) {
+      if (!sense.perfect.length && !sense.near.length) return;
+      if (senses.length > 1) {
+        const eg = sense.perfect[0] || sense.near[0] || '';
+        html += '<div class="sense-head">Pronunciation ' + (k + 1) + (eg ? ' — like “' + eg + '”' : '') + '</div>';
+      }
+      if (sense.perfect.length) {
+        html += sectionLabel('Perfect rhymes', sense.perfect.length) + familyHint(sense.family) + renderPerfect(sense.perfect);
+      } else {
+        html += '<div class="empty" style="padding:0.6rem 0">No perfect rhymes for this pronunciation — showing near rhymes.</div>';
+      }
+      if (sense.near.length) {
+        html += sectionLabel('Near rhymes — similar sound', sense.near.length) + chipGrid(sense.near);
+      }
+    });
+    if (homophones.length) {
+      html += sectionLabel('Homophones — sound the same, not rhymes', homophones.length)
+        + '<p class="hint">These sound identical to your word, so they are not true rhymes.</p>'
+        + chipGrid(homophones);
+    }
   }
 
-  let html = '<p style="font-size:0.85rem;color:#718096;margin-bottom:1rem">Rhymes for "<strong class="qw"></strong>"</p>';
-  senses.forEach(function (sense, k) {
-    if (sense.perfect.length === 0 && sense.near.length === 0) return;
-    if (senses.length > 1) {
-      const eg = sense.perfect[0] || sense.near[0] || '';
-      html += '<div class="syllable-label" style="margin-top:' + (k ? '1.25rem' : '0') + ';color:#2d3748">Pronunciation ' + (k + 1) + (eg ? ' — rhymes with “' + eg + '”' : '') + '</div>';
-    }
-    if (sense.perfect.length) {
-      html += '<div class="syllable-label" style="color:#4a5568">Perfect rhymes (' + sense.perfect.length + ') · ' + (FAMILY_LABEL[sense.family] || '') + '</div>' + syllableGroups(sense.perfect);
-    } else {
-      html += '<div class="empty" style="padding:0.75rem 0">No strong exact rhymes for this pronunciation - showing near rhymes.</div>';
-    }
-    if (sense.near.length) {
-      html += '<div class="syllable-label" style="margin-top:0.75rem;color:#4a5568">Near rhymes - similar ending sound (' + sense.near.length + ')</div>' + chipGrid(sense.near);
-    }
-  });
-  if (homophones.length) {
-    html += '<div class="syllable-label" style="margin-top:1.25rem;color:#4a5568">Homophones - sound identical, not rhymes (' + homophones.length + ')</div>' + chipGrid(homophones);
-  }
   results.innerHTML = html;
   results.querySelectorAll('.qw').forEach(function (el) { el.textContent = word; });
+}
+
+// --- copy workflow: local clipboard only, never transmits anything ---
+function copyText() {
+  const senses = computeSenses();
+  if (!senses.length) return '';
+  const seen = {};
+  const perfect = [];
+  const near = [];
+  senses.forEach(function (s) { s.perfect.forEach(function (w) { if (!seen[w]) { seen[w] = 1; perfect.push(w); } }); });
+  senses.forEach(function (s) { s.near.forEach(function (w) { if (!seen[w]) { seen[w] = 1; near.push(w); } }); });
+  if (!perfect.length && !near.length) return '';
+  const lines = ['Rhymes for "' + currentRhymes.word + '"'];
+  if (perfect.length) lines.push('Perfect: ' + perfect.join(', '));
+  if (near.length) lines.push('Near: ' + near.join(', '));
+  return lines.join('\n');
+}
+
+function flashCopy(btn, msg) {
+  if (!btn) return;
+  btn.textContent = msg;
+  btn.classList.add('done');
+  setTimeout(function () { btn.textContent = 'Copy all'; btn.classList.remove('done'); }, 1400);
+}
+
+function legacyCopy(text) {
+  try {
+    const ta = document.createElement('textarea');
+    ta.value = text;
+    ta.setAttribute('readonly', '');
+    ta.style.position = 'absolute';
+    ta.style.left = '-9999px';
+    document.body.appendChild(ta);
+    ta.select();
+    const okFlag = document.execCommand && document.execCommand('copy');
+    document.body.removeChild(ta);
+    return !!okFlag;
+  } catch (e) { return false; }
+}
+
+function copyAll(btn) {
+  let text = '';
+  try { text = copyText(); } catch (e) { text = ''; }
+  if (!text) { flashCopy(btn, 'Nothing to copy'); return; }
+  const ok = function () { flashCopy(btn, 'Copied!'); };
+  const fail = function () { flashCopy(btn, 'Press Ctrl+C'); };
+  try {
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).then(ok, function () { if (legacyCopy(text)) { ok(); } else { fail(); } });
+    } else if (legacyCopy(text)) {
+      ok();
+    } else {
+      fail();
+    }
+  } catch (e) { fail(); }
 }
 </script>
 </body>

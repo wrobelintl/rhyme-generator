@@ -169,6 +169,25 @@ for (const w of CASES.familySafety.mustBeAbsent) {
   const ext = html.match(/<script[^>]*\bsrc=[^>]*>/g) || [];
   check(dim, true, ext.length === 1 && ext[0].includes('adsbygoogle.js') && ext[0].includes('ca-pub-6286935824893984'),
     'only external script is the unchanged AdSense loader');
+
+  // ---- UI workflow affordances (client-side upgrade; must not add data/API/telemetry) ----
+  const chipCount = (html.match(/class="chip"/g) || []).length;
+  const exWords = ['love', 'time', 'day', 'night', 'horse', 'orange'];
+  check(dim, true, script.includes('function runExample') && chipCount >= 6
+    && exWords.every(w => html.includes("runExample('" + w + "')")),
+    'starter example chips wired (>=6, incl. love/time/day/night/horse/orange)');
+  check(dim, true, script.includes('function copyAll') && script.includes('function copyText')
+    && /navigator\.clipboard/.test(script) && /catch \(e\)/.test(script),
+    'copy-all handler present, uses clipboard API, and is guarded (no throw)');
+  check(dim, true, (script.match(/fetch\(/g) || []).length === 1,
+    'copy/controls add no new fetch (clipboard is local; still a single data fetch)');
+  check(dim, true, script.includes('function setSort') && script.includes('function toggleNear')
+    && script.includes('currentSort') && script.includes('includeNear'),
+    'writer controls wired (sort: syllables/A-Z, include-near toggle)');
+  check(dim, false, script.includes('Perfect rhymes') && script.includes('Near rhymes') && script.includes('Homophones'),
+    'plain result section labels present (Perfect / Near / Homophones)');
+  check(dim, false, /searches run in your browser/i.test(html) || /searches stay on your device/i.test(html),
+    'in-browser privacy reassurance shown near the input');
 }
 
 // ---------- 10. payload budgets ----------
