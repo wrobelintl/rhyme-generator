@@ -31,6 +31,12 @@ const D = JSON.parse(raw);
 const CASES = JSON.parse(readFileSync('tools/rhyme-quality-cases.json', 'utf8'));
 const html = readFileSync('index.html', 'utf8');
 
+// Assonance-tier display stoplist — MUST stay in sync with SONIC_STOP in
+// index.html (pure grammatical auxiliaries; never shown as vowel mates).
+const SONIC_STOP = new Set(['was', 'has', 'had', 'does', 'did', 'been', 'are', 'were',
+  'will', 'would', 'could', 'should', 'shall', 'can', 'than', 'such', 'into', 'onto',
+  'them', 'thus']);
+
 // ---------- result collection ----------
 const hard = [], advisory = [], dims = new Map();
 function check(dim, isHard, okFlag, msg) {
@@ -56,41 +62,60 @@ function check(dim, isHard, okFlag, msg) {
   check(dim, true, (D.x || []).every(i => i >= 0 && i < D.w.length), 'suppressed indices in range');
   check(dim, true, new Set(D.w).size === D.w.length, 'no duplicate words');
   check(dim, true, D.w.every(w => /^[a-z]+$/.test(w)), 'every word is plain lowercase a-z (no markup/junk possible)');
+  check(dim, true, Array.isArray(D.v) && D.v.length === groupCount,
+    `assonance ids cover every group (v=${(D.v || []).length} n=${groupCount})`);
+  check(dim, true, (D.v || []).every(a => a >= 0 && a < D._m.assonanceKeys),
+    `every assonance id in range (${D._m.assonanceKeys} classes declared)`);
 }
 
 // ---------- 2. lookup mirror (same derivation as the browser client) ----------
 const index = new Map();
 D.w.forEach((word, i) => index.set(word, i));
-const groups = [], nearGroups = [];
+const groups = [], nearGroups = [], asnGroups = [];
 const addNear = (gid, i) => {
   const ng = D.n[gid];
   if (ng < 0) return;
   const arr = nearGroups[ng] ||= [];
   if (arr[arr.length - 1] !== i) arr.push(i);
 };
-D.g.forEach((gid, i) => { (groups[gid] ||= []).push(i); addNear(gid, i); });
-for (const [k, extra] of Object.entries(D.a2)) for (const gid of extra) { (groups[gid] ||= []).push(+k); addNear(gid, +k); }
+const addAsn = (gid, i) => { if (D.v) (asnGroups[D.v[gid]] ||= []).push(i); };
+D.g.forEach((gid, i) => { (groups[gid] ||= []).push(i); addNear(gid, i); addAsn(gid, i); });
+for (const [k, extra] of Object.entries(D.a2)) for (const gid of extra) { (groups[gid] ||= []).push(+k); addNear(gid, +k); addAsn(gid, +k); }
 groups.forEach(a => a && a.sort((x, y) => x - y));
 nearGroups.forEach(a => a && a.sort((x, y) => x - y));
+asnGroups.forEach((a, k) => { if (a) asnGroups[k] = Array.from(new Set(a)).sort((x, y) => x - y); });
 const hidden = new Set((D.x || []).map(Number));
 
 function lookup(word) {
   const i = index.get(word);
-  if (i === undefined) return { known: false, senses: [], homophones: [], all: [] };
+  if (i === undefined) return { known: false, senses: [], homophones: [], all: [], sonic: [] };
   const gids = [D.g[i], ...(D.a2[i] || [])];
   const hid = D.h[i];
   const isHomo = j => hid !== undefined && D.h[j] === hid;
   const homophones = (groups[D.g[i]] || []).filter(j => j !== i && isHomo(j) && !hidden.has(j)).map(j => D.w[j]);
+  const seenSonic = {};
   const senses = gids.map(gid => {
     const members = groups[gid] || [];
     const inGroup = new Set(members);
     const perfect = members.filter(j => j !== i && !hidden.has(j) && !isHomo(j)).map(j => D.w[j]);
-    let near = [];
+    let near = [], inNear = null;
     const ng = D.n[gid];
-    if (ng >= 0) near = (nearGroups[ng] || []).filter(j => j !== i && !inGroup.has(j) && !hidden.has(j) && !isHomo(j)).map(j => D.w[j]);
-    return { perfect, near, family: +D.f[gid] };
+    if (ng >= 0) {
+      const nearIdx = nearGroups[ng] || [];
+      inNear = new Set(nearIdx);
+      near = nearIdx.filter(j => j !== i && !inGroup.has(j) && !hidden.has(j) && !isHomo(j)).map(j => D.w[j]);
+    }
+    let sonic = [];
+    const vid = D.v ? D.v[gid] : undefined;
+    if (vid !== undefined && !seenSonic[vid]) {
+      seenSonic[vid] = true;
+      sonic = (asnGroups[vid] || [])
+        .filter(j => j !== i && !inGroup.has(j) && !(inNear && inNear.has(j)) && !hidden.has(j) && !isHomo(j) && !SONIC_STOP.has(D.w[j]))
+        .map(j => D.w[j]);
+    }
+    return { perfect, near, family: +D.f[gid], sonic };
   });
-  return { known: true, senses, homophones, all: senses.flatMap(s => s.perfect.concat(s.near)) };
+  return { known: true, senses, homophones, all: senses.flatMap(s => s.perfect.concat(s.near)), sonic: senses.flatMap(s => s.sonic) };
 }
 
 // ---------- 3. golden cases ----------
@@ -132,6 +157,25 @@ for (const c of CASES.homophones) {
     `${c.word}: ${x} not offered as a rhyme`);
 }
 
+// ---------- 5b. sounds-like / assonance tier ----------
+for (const c of CASES.soundsLike || []) {
+  const dim = 'sounds-like';
+  const r = lookup(c.word);
+  if (c.minSonic) check(dim, !!c.hard, r.sonic.length >= c.minSonic,
+    `${c.word}: offers >=${c.minSonic} assonance words (${r.sonic.length})`);
+  if (c.sonicIncludesAny) check(dim, !!c.hard, c.sonicIncludesAny.some(x => r.sonic.includes(x)),
+    `${c.word}: assonance includes one of ${c.sonicIncludesAny.join('/')}`);
+  if (c.sonicExcludes) check(dim, !!c.hard, c.sonicExcludes.every(x => !r.sonic.includes(x)),
+    `${c.word}: assonance never lists ${c.sonicExcludes.join('/')}`);
+  // Separation is a product rule, not a per-case option: the assonance list
+  // may never overlap the rhyme tiers, the homophones, or the query itself.
+  const rhymeSet = new Set(r.all.concat(r.homophones, [c.word]));
+  check(dim, true, r.sonic.every(x => !rhymeSet.has(x)),
+    `${c.word}: assonance stays fully separate from rhyme/homophone tiers`);
+  check(dim, true, new Set(r.sonic).size === r.sonic.length,
+    `${c.word}: assonance list has no duplicates`);
+}
+
 // ---------- 6. rhyme families ----------
 for (const c of CASES.families) {
   const dim = 'families';
@@ -169,6 +213,18 @@ for (const w of CASES.familySafety.mustBeAbsent) {
   const ext = html.match(/<script[^>]*\bsrc=[^>]*>/g) || [];
   check(dim, true, ext.length === 1 && ext[0].includes('adsbygoogle.js') && ext[0].includes('ca-pub-6286935824893984'),
     'only external script is the unchanged AdSense loader');
+
+  // ---- assonance tier honesty (labels + explainer + separation affordances) ----
+  check(dim, true, script.includes('Similar vowel sound — assonance'),
+    'assonance section carries the honest "Similar vowel sound" label (never "rhymes")');
+  check(dim, true, script.includes('These are not exact rhymes — they share a similar vowel sound.'),
+    'assonance explainer present verbatim');
+  check(dim, true, script.includes('function revealSonic') && script.includes('Show words with a similar vowel sound'),
+    'assonance reveal control wired for rhyme-rich words');
+  check(dim, true, script.includes('SONIC_STOP'),
+    'assonance glue-word stoplist present in client');
+  check(dim, true, script.includes('Similar vowel sound (not exact rhymes):'),
+    'copy-all labels assonance as not-exact-rhymes');
 
   // ---- UI workflow affordances (client-side upgrade; must not add data/API/telemetry) ----
   const chipCount = (html.match(/class="chip"/g) || []).length;
@@ -225,14 +281,21 @@ const sweep = {};
 {
   const dim = 'sweep';
   // Common words with zero offered perfect rhymes = coverage candidates.
+  // The assonance tier "rescues" such a word when it gives >=3 suggestions.
   sweep.coverageCandidates = [];
+  sweep.rescued = 0;
   for (let i = 0; i < Math.min(2000, D.w.length); i++) {
     if (hidden.has(i)) continue;
     const r = lookup(D.w[i]);
-    if (r.senses.every(se => se.perfect.length === 0)) sweep.coverageCandidates.push({ word: D.w[i], rank: i });
+    if (r.senses.every(se => se.perfect.length === 0)) {
+      sweep.coverageCandidates.push({ word: D.w[i], rank: i });
+      if (r.sonic.length >= 3) sweep.rescued++;
+    }
   }
   check(dim, false, sweep.coverageCandidates.length <= 120,
     `top-2000 words with zero offered perfect rhymes: ${sweep.coverageCandidates.length} (coverage candidates)`);
+  check(dim, false, sweep.rescued >= sweep.coverageCandidates.length * 0.9,
+    `assonance rescues ${sweep.rescued}/${sweep.coverageCandidates.length} zero-perfect words with >=3 suggestions`);
 
   // Largest near groups = places to eyeball for slant-rhyme junk.
   sweep.bigNear = nearGroups
@@ -275,14 +338,14 @@ any data/engine change. Everything below is derived from the committed
 ## Current status
 - Hard blockers: **${hardFail.length === 0 ? 'NONE — all hard checks pass' : hardFail.length + ' FAILING'}**
 - Advisory items open: ${advFail.length}
-- Dataset: ${D.w.length} words, ${D._m.perfectKeys} perfect keys, ${sweep.altWords} homograph words, ${sweep.homophoneWords} homophone words, ${sweep.suppressed} suppressed glue words
+- Dataset: ${D.w.length} words, ${D._m.perfectKeys} perfect keys, ${D._m.assonanceKeys} assonance classes, ${sweep.altWords} homograph words, ${sweep.homophoneWords} homophone words, ${sweep.suppressed} suppressed glue words
 - Payload: ${raw.length} B raw / ${gz} B gzipped (hard ceiling 100 KB, soft budget 90 KB)
 
 ## Hard blockers
 ${hardFail.length ? hardFail.map(c => `- [${c.dim}] ${c.msg}`).join('\n') : '- None.'}
 
 ## Candidate improvements (measured)
-- **Coverage gaps:** ${sweep.coverageCandidates.length} of the top-2000 words have zero offered perfect rhymes. Highest-frequency examples: ${cc.map(c => `${c.word} (#${c.rank})`).join(', ')}. Most are genuinely rhyme-poor in English (natural singletons); a curated near-rhyme seed for the worst offenders is the plausible fix. *Speculative: which of these users actually search.*
+- **Coverage gaps:** ${sweep.coverageCandidates.length} of the top-2000 words have zero offered perfect rhymes. The assonance tier now rescues ${sweep.rescued} of them (${Math.round(100 * sweep.rescued / Math.max(1, sweep.coverageCandidates.length))}%) with >=3 clearly-labeled similar-vowel-sound suggestions. Highest-frequency examples: ${cc.map(c => `${c.word} (#${c.rank})`).join(', ')}. *Speculative: which of these users actually search.*
 - **Largest near groups (eyeball for junk):**
 ${sweep.bigNear.map(b => `  - near-group #${b.ng}: ${b.size} words — sample: ${b.sample.join(', ')}`).join('\n')}
 ${advFail.length ? '- **Open advisory checks:**\n' + advFail.map(c => `  - [${c.dim}] ${c.msg}`).join('\n') : ''}

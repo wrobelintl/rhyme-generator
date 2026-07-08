@@ -1,6 +1,7 @@
 // test-rhymes.mjs — plain-Node validation of the generated rhyme data (no deps).
-// Mirrors the browser lookup (format: w/g/a2/s/n/f/h/x) and asserts rhyme
-// quality, homograph/homophone behavior, licensing metadata, and payload budgets.
+// Mirrors the browser lookup (format: w/g/a2/s/n/f/h/x/v) and asserts rhyme
+// quality, homograph/homophone behavior, the assonance (similar-vowel-sound)
+// tier, licensing metadata, and payload budgets.
 // Run:  node tools/test-rhymes.mjs
 import { readFileSync, existsSync } from 'node:fs';
 import { gzipSync } from 'node:zlib';
@@ -8,42 +9,64 @@ import { gzipSync } from 'node:zlib';
 const raw = readFileSync('data/rhymes.min.json');
 const D = JSON.parse(raw);
 
+// Assonance-tier display stoplist — MUST stay in sync with SONIC_STOP in
+// index.html (pure grammatical auxiliaries; never shown as vowel mates).
+const SONIC_STOP = new Set(['was', 'has', 'had', 'does', 'did', 'been', 'are', 'were',
+  'will', 'would', 'could', 'should', 'shall', 'can', 'than', 'such', 'into', 'onto',
+  'them', 'thus']);
+
 // --- build lookup structures exactly as the browser does ---
 const index = new Map();
 D.w.forEach((word, i) => index.set(word, i));
-const groups = [], nearGroups = [];
+const groups = [], nearGroups = [], asnGroups = [];
 const addNear = (gid, i) => {
   const ng = D.n[gid];
   if (ng < 0) return;
   const arr = nearGroups[ng] ||= [];
   if (arr[arr.length - 1] !== i) arr.push(i);
 };
-D.g.forEach((gid, i) => { (groups[gid] ||= []).push(i); addNear(gid, i); });
+const addAsn = (gid, i) => { if (D.v) (asnGroups[D.v[gid]] ||= []).push(i); };
+D.g.forEach((gid, i) => { (groups[gid] ||= []).push(i); addNear(gid, i); addAsn(gid, i); });
 for (const [k, extra] of Object.entries(D.a2)) {
-  for (const gid of extra) { (groups[gid] ||= []).push(+k); addNear(gid, +k); }
+  for (const gid of extra) { (groups[gid] ||= []).push(+k); addNear(gid, +k); addAsn(gid, +k); }
 }
 groups.forEach(a => a && a.sort((x, y) => x - y));
 nearGroups.forEach(a => a && a.sort((x, y) => x - y));
+asnGroups.forEach((a, k) => { if (a) asnGroups[k] = Array.from(new Set(a)).sort((x, y) => x - y); });
 const hidden = new Set((D.x || []).map(Number));
 
 function lookup(word) {
   const i = index.get(word);
-  if (i === undefined) return { known: false, senses: [], homophones: [], all: [] };
+  if (i === undefined) return { known: false, senses: [], homophones: [], all: [], sonic: [] };
   const gids = [D.g[i], ...(D.a2[i] || [])];
   const hid = D.h[i];
   const isHomo = j => hid !== undefined && D.h[j] === hid;
   const homophones = (groups[D.g[i]] || []).filter(j => j !== i && isHomo(j) && !hidden.has(j)).map(j => D.w[j]);
+  const seenSonic = {};
   const senses = gids.map(gid => {
     const members = groups[gid] || [];
     const inGroup = new Set(members);
     const perfect = members.filter(j => j !== i && !hidden.has(j) && !isHomo(j)).map(j => D.w[j]);
-    let near = [];
+    let near = [], inNear = null;
     const ng = D.n[gid];
-    if (ng >= 0) near = (nearGroups[ng] || []).filter(j => j !== i && !inGroup.has(j) && !hidden.has(j) && !isHomo(j)).map(j => D.w[j]);
-    return { perfect, near, family: +D.f[gid] };
+    if (ng >= 0) {
+      const nearIdx = nearGroups[ng] || [];
+      inNear = new Set(nearIdx);
+      near = nearIdx.filter(j => j !== i && !inGroup.has(j) && !hidden.has(j) && !isHomo(j)).map(j => D.w[j]);
+    }
+    let sonic = [];
+    const vid = D.v ? D.v[gid] : undefined;
+    if (vid !== undefined && !seenSonic[vid]) {
+      seenSonic[vid] = true;
+      sonic = (asnGroups[vid] || [])
+        .filter(j => j !== i && !inGroup.has(j) && !(inNear && inNear.has(j)) && !hidden.has(j) && !isHomo(j) && !SONIC_STOP.has(D.w[j]))
+        .map(j => D.w[j]);
+    }
+    return { perfect, near, family: +D.f[gid], sonic };
   });
   const all = senses.flatMap(s => s.perfect.concat(s.near));
-  return { known: true, senses, homophones, all };
+  const sonic = senses.flatMap(s => s.sonic);
+  return { known: true, senses, homophones, all, sonic };
 }
 
 let pass = 0, fail = 0;
@@ -120,6 +143,41 @@ ok(+D.f[D.g[index.get('family')]] === 3, 'family group family = 3 (dactylic)');
 
 // --- unknown word ---
 ok(lookup('blorfing').known === false, 'unknown word -> honest not-found state');
+
+// --- assonance tier (v): structure ---
+ok(Array.isArray(D.v) && D.v.length === D.n.length, `v covers every perfect group (v=${(D.v || []).length} n=${D.n.length})`);
+ok(D.v.every(a => a >= 0 && a < D._m.assonanceKeys), `every assonance id in range (${D._m.assonanceKeys} classes)`);
+
+// --- assonance tier: quality + honesty on rhyme-poor words ---
+const orangeS = lookup('orange');
+ok(orangeS.sonic.length >= 3, `orange offers >=3 assonance words (${orangeS.sonic.length})`);
+ok(some(orangeS.sonic, ['foreign', 'forward', 'morning', 'portion', 'office']), 'orange assonance includes foreign/forward/morning-type matches');
+console.log('   orange assonance:', orangeS.sonic.slice(0, 8).join(', '));
+const silverS = lookup('silver');
+ok(silverS.senses.every(se => se.perfect.length === 0), 'silver has no fake exact rhymes');
+ok(some(silverS.sonic, ['river', 'little', 'women', 'single', 'figure']), 'silver assonance includes river/little/women-type matches');
+const worldS = lookup('world');
+ok(some(worldS.sonic, ['first', 'work', 'word', 'earth', 'church']), 'world assonance includes first/work/word-type matches');
+const musicS = lookup('music');
+ok(some(musicS.sonic, ['human', 'future', 'student', 'useful', 'computer']), 'music assonance includes human/future/student-type matches');
+const peopleS = lookup('people');
+ok(some(peopleS.sonic, ['reason', 'legal', 'equal', 'region', 'meaning']), 'people assonance includes reason/legal/equal-type matches');
+
+// --- assonance tier: separation from rhyme tiers (never blended) ---
+for (const wd of ['orange', 'silver', 'world', 'music', 'people', 'time', 'day', 'love', 'night', 'sea']) {
+  const r = lookup(wd);
+  const rhymeSet = new Set(r.all.concat(r.homophones, [wd]));
+  ok(r.sonic.every(x => !rhymeSet.has(x)), `${wd}: assonance list shares NOTHING with perfect/near/homophones`);
+}
+
+// --- assonance tier: glue-word stoplist + dedup ---
+const monthS = lookup('month');
+ok(none(monthS.sonic, ['was', 'has', 'been', 'such', 'them', 'into']), 'month assonance excludes was/has/been/such/them/into (stoplist)');
+ok(some(monthS.sonic, ['one', 'come', 'done', 'become', 'among']), 'month assonance keeps real vowel mates (one/come/done)');
+const silverDedup = new Set(silverS.sonic);
+ok(silverDedup.size === silverS.sonic.length, 'assonance lists contain no duplicate words (homograph dedup)');
+const dayS = lookup('day');
+ok(some(dayS.sonic, ['made', 'state', 'name', 'place', 'take']), 'day assonance includes made/state/name (EY vowel mates)');
 
 console.log(`\nRESULT: ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

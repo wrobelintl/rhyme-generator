@@ -7,6 +7,7 @@
     { "word": "day", "hard": true, "mustIncludeAny": ["way", "say", "play", "stay", "away"], "expectNoNear": true },
     { "word": "night", "hard": true, "mustIncludeAny": ["light", "right", "write", "sight", "bright"] },
     { "word": "orange", "hard": true, "expectNoPerfect": true },
+    { "word": "silver", "hard": true, "expectNoPerfect": true },
     { "word": "playground", "hard": true, "mustIncludeAny": ["ground", "sound", "found", "around"] },
     { "word": "heart", "hard": false, "mustIncludeAny": ["start", "part", "apart", "art"] },
     { "word": "fire", "hard": false, "mustIncludeAny": ["desire", "wire", "hire", "inspire"] },
@@ -27,6 +28,17 @@
     { "word": "day", "hard": true, "family": 1 },
     { "word": "money", "hard": true, "family": 2 },
     { "word": "family", "hard": true, "family": 3 }
+  ],
+  "soundsLike": [
+    { "word": "orange", "hard": true, "minSonic": 3, "sonicIncludesAny": ["foreign", "forward", "morning", "portion", "office"] },
+    { "word": "silver", "hard": true, "minSonic": 3, "sonicIncludesAny": ["river", "little", "women", "single", "figure"] },
+    { "word": "world", "hard": true, "minSonic": 3, "sonicIncludesAny": ["first", "work", "word", "earth", "church"] },
+    { "word": "music", "hard": true, "minSonic": 3, "sonicIncludesAny": ["human", "future", "student", "useful", "computer"] },
+    { "word": "people", "hard": true, "minSonic": 3, "sonicIncludesAny": ["reason", "legal", "equal", "region", "meaning"] },
+    { "word": "purple", "hard": false, "minSonic": 3, "sonicIncludesAny": ["person", "certain", "purpose", "surface"] },
+    { "word": "month", "hard": true, "sonicExcludes": ["was", "has", "been", "such", "them", "into"] },
+    { "word": "time", "hard": true, "sonicExcludes": ["rhyme", "climb", "prime", "line", "mine", "shine"] },
+    { "word": "day", "hard": true, "sonicExcludes": ["way", "say", "play", "stay", "away"], "sonicIncludesAny": ["made", "state", "name", "place", "take"] }
   ],
   "unknowns": { "hard": true, "words": ["blorfing", "zzqwv", "snarfle"] },
   "familySafety": { "hard": true, "mustBeAbsent": ["fuck", "shit", "cunt", "nigger", "faggot"] }

@@ -9,14 +9,14 @@ any data/engine change. Everything below is derived from the committed
 ## Current status
 - Hard blockers: **NONE — all hard checks pass**
 - Advisory items open: 2
-- Dataset: 9516 words, 4705 perfect keys, 1069 homograph words, 447 homophone words, 22 suppressed glue words
-- Payload: 193686 B raw / 79298 B gzipped (hard ceiling 100 KB, soft budget 90 KB)
+- Dataset: 9516 words, 4705 perfect keys, 229 assonance classes, 1069 homograph words, 447 homophone words, 22 suppressed glue words
+- Payload: 207742 B raw / 84458 B gzipped (hard ceiling 100 KB, soft budget 90 KB)
 
 ## Hard blockers
 - None.
 
 ## Candidate improvements (measured)
-- **Coverage gaps:** 437 of the top-2000 words have zero offered perfect rhymes. Highest-frequency examples: have (#24), also (#65), general (#108), people (#109), even (#113), government (#135), world (#150), every (#164), following (#175), second (#180), american (#181), development (#182), university (#184), total (#189), business (#194). Most are genuinely rhyme-poor in English (natural singletons); a curated near-rhyme seed for the worst offenders is the plausible fix. *Speculative: which of these users actually search.*
+- **Coverage gaps:** 437 of the top-2000 words have zero offered perfect rhymes. The assonance tier now rescues 427 of them (98%) with >=3 clearly-labeled similar-vowel-sound suggestions. Highest-frequency examples: have (#24), also (#65), general (#108), people (#109), even (#113), government (#135), world (#150), every (#164), following (#175), second (#180), american (#181), development (#182), university (#184), total (#189), business (#194). *Speculative: which of these users actually search.*
 - **Largest near groups (eyeball for junk):**
   - near-group #101: 257 words — sample: information, education, association, application, population, operation
   - near-group #39: 153 words — sample: made, state, make, great, take, rate

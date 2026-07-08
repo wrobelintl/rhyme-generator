@@ -187,7 +187,10 @@
 //         s = syllable digit per word; n = near-group id per perfect group
 //         (-1 = open syllable, no near tier); f = family digit per group
 //         (1 masculine / 2 feminine / 3 dactylic); h = sparse homophone-group id;
-//         x = suppressed word indices (queryable, never offered).
+//         x = suppressed word indices (queryable, never offered);
+//         v = assonance-class id per perfect group (same tail vowel sounds,
+//         any consonants). Shown only as clearly-labeled "Similar vowel sound"
+//         suggestions - NEVER mixed into the rhyme lists.
 
 let DB = null;
 let dataError = false;
@@ -196,6 +199,15 @@ let currentRhymes = null;
 let currentFilter = 'all';        // syllable filter: 'all' | 1 | 2 | 3
 let currentSort = 'syllables';    // 'syllables' (grouped, common-first) | 'az'
 let includeNear = true;           // show the near-rhyme tier
+let sonicRevealed = false;        // per-search: user opened the assonance tier
+
+// Pure grammatical auxiliaries/function words suppressed from the ASSONANCE
+// tier only (they never carry line stress, so they are useless as vowel
+// mates). Real rhyme words like "one/come/done/just/must" are deliberately
+// NOT listed. Perfect/near lists are unaffected.
+const SONIC_STOP = new Set(['was', 'has', 'had', 'does', 'did', 'been', 'are', 'were',
+  'will', 'would', 'could', 'should', 'shall', 'can', 'than', 'such', 'into', 'onto',
+  'them', 'thus']);
 
 fetch('data/rhymes.min.json')
   .then(function (r) { if (!r.ok) throw new Error('load'); return r.json(); })
@@ -204,26 +216,38 @@ fetch('data/rhymes.min.json')
     d.w.forEach(function (word, i) { index.set(word, i); });
     const groups = [];      // perfect group id -> [word index...] (freq-ordered)
     const nearGroups = [];  // near group id -> [word index...]
+    const asnGroups = [];   // assonance class id -> [word index...] (from d.v)
     const addNear = function (gid, i) {
       const ng = d.n[gid];
       if (ng < 0) return;
       const arr = nearGroups[ng] || (nearGroups[ng] = []);
       if (arr[arr.length - 1] !== i) arr.push(i);
     };
+    const addAsn = function (gid, i) {
+      if (!d.v) return; // tolerate a stale cached data file without v
+      const vid = d.v[gid];
+      (asnGroups[vid] || (asnGroups[vid] = [])).push(i);
+    };
     d.g.forEach(function (gid, i) {
       (groups[gid] || (groups[gid] = [])).push(i);
       addNear(gid, i);
+      addAsn(gid, i);
     });
     Object.keys(d.a2).forEach(function (k) {
       const i = +k;
       d.a2[k].forEach(function (gid) {
         (groups[gid] || (groups[gid] = [])).push(i);
         addNear(gid, i);
+        addAsn(gid, i);
       });
     });
     groups.forEach(function (arr) { if (arr) arr.sort(function (a, b) { return a - b; }); });
     nearGroups.forEach(function (arr) { if (arr) arr.sort(function (a, b) { return a - b; }); });
-    DB = { d: d, index: index, groups: groups, nearGroups: nearGroups, hidden: new Set((d.x || []).map(Number)) };
+    // dedup (a homograph's two pronunciations can share one assonance class)
+    asnGroups.forEach(function (arr, k) {
+      if (arr) asnGroups[k] = Array.from(new Set(arr)).sort(function (a, b) { return a - b; });
+    });
+    DB = { d: d, index: index, groups: groups, nearGroups: nearGroups, asnGroups: asnGroups, hidden: new Set((d.x || []).map(Number)) };
     if (pendingWord !== null) { const w = pendingWord; pendingWord = null; lookup(w); }
   })
   .catch(function () { dataError = true; renderMessage('Sorry - rhyme data could not be loaded. Please refresh the page.'); });
@@ -247,6 +271,7 @@ function runExample(w) {
 }
 
 function lookup(word) {
+  sonicRevealed = false; // assonance reveal is a per-search choice
   const i = DB.index.get(word);
   if (i === undefined) {
     currentRhymes = { word: word, known: false, senses: [], homophones: [] };
@@ -262,6 +287,7 @@ function lookup(word) {
     .filter(function (j) { return j !== i && isHomophone(j) && !DB.hidden.has(j); })
     .map(function (j) { return d.w[j]; });
 
+  const seenSonicClass = {}; // a homograph's senses can share one assonance class
   const senses = gids.map(function (gid) {
     const members = DB.groups[gid] || [];
     const inGroup = new Set(members);
@@ -269,13 +295,30 @@ function lookup(word) {
       .filter(function (j) { return j !== i && !DB.hidden.has(j) && !isHomophone(j); })
       .map(function (j) { return d.w[j]; });
     let near = [];
+    let inNear = null;
     const ng = d.n[gid];
     if (ng >= 0) {
-      near = (DB.nearGroups[ng] || [])
+      const nearIdx = DB.nearGroups[ng] || [];
+      inNear = new Set(nearIdx);
+      near = nearIdx
         .filter(function (j) { return j !== i && !inGroup.has(j) && !DB.hidden.has(j) && !isHomophone(j); })
         .map(function (j) { return d.w[j]; });
     }
-    return { perfect: perfect, near: near, family: +d.f[gid] };
+    // Assonance tier: same tail vowel sounds, any consonants. Everything the
+    // rhyme sections already show (or that is grammatical glue) is excluded,
+    // so this list is strictly "beyond the rhymes" - and clearly labeled so.
+    let sonic = [];
+    const vid = d.v ? d.v[gid] : undefined;
+    if (vid !== undefined && !seenSonicClass[vid]) {
+      seenSonicClass[vid] = true;
+      sonic = (DB.asnGroups[vid] || [])
+        .filter(function (j) {
+          return j !== i && !inGroup.has(j) && !(inNear && inNear.has(j))
+            && !DB.hidden.has(j) && !isHomophone(j) && !SONIC_STOP.has(d.w[j]);
+        })
+        .map(function (j) { return d.w[j]; });
+    }
+    return { perfect: perfect, near: near, family: +d.f[gid], sonic: sonic };
   });
 
   currentRhymes = { word: word, known: true, senses: senses, homophones: homophones };
@@ -286,18 +329,25 @@ function lookup(word) {
 function setSyllable(val) { currentFilter = val; renderRhymes(); }
 function setSort(val) { currentSort = val; renderRhymes(); }
 function toggleNear() { includeNear = !includeNear; renderRhymes(); }
+function revealSonic() { sonicRevealed = true; renderRhymes(); }
 function resetFilters() { currentFilter = 'all'; currentSort = 'syllables'; includeNear = true; renderRhymes(); }
 
 function sylMatch(w) { return currentFilter === 'all' || sylOf(w) === currentFilter; }
 function sortMaybe(list) { return currentSort === 'az' ? list.slice().sort() : list; }
 
 // Filter + sort + cap each sense the same way for display AND copy (WYSIWYG).
+// Assonance visibility: auto-shown only when a sense has NO perfect rhymes
+// (the "orange/silver rescue"); otherwise it stays behind the reveal control.
+// A sense needs >=3 raw assonance words to offer the tier at all (junk guard).
 function computeSenses() {
   if (!currentRhymes || !currentRhymes.known) return [];
   return currentRhymes.senses.map(function (sense) {
     const perfect = sortMaybe(sense.perfect.filter(sylMatch)).slice(0, 60);
     const near = includeNear ? sortMaybe(sense.near.filter(sylMatch)).slice(0, 18) : [];
-    return { perfect: perfect, near: near, family: sense.family };
+    const hasSonic = sense.sonic.length >= 3;
+    const sonicVisible = hasSonic && (sense.perfect.length === 0 || sonicRevealed);
+    const sonic = sonicVisible ? sortMaybe(sense.sonic.filter(sylMatch)).slice(0, 24) : [];
+    return { perfect: perfect, near: near, family: sense.family, sonic: sonic, sonicHidden: hasSonic && !sonicVisible };
   });
 }
 
@@ -376,23 +426,47 @@ function renderRhymes() {
 
   const rawHas = currentRhymes.senses.some(function (s) { return s.perfect.length || s.near.length; });
   const homophones = currentRhymes.homophones.filter(sylMatch);
+  const senses = computeSenses();
+  const sonicTotal = senses.reduce(function (t, s) { return t + s.sonic.length; }, 0);
 
   if (!rawHas) {
-    if (homophones.length) {
-      results.innerHTML = '<div class="results-head"><div class="results-title">“<span class="qw"></span>”</div></div>'
-        + '<div class="empty" style="padding:0.75rem 0">No perfect or near rhymes for this word in our dictionary — but it has homophones.</div>'
-        + sectionLabel('Homophones — sound the same, not rhymes', homophones.length)
-        + '<p class="hint">Homophones sound identical to your word, so they are not true rhymes.</p>'
-        + chipGrid(homophones);
-      results.querySelectorAll('.qw').forEach(function (el) { el.textContent = word; });
+    // Rescue path: the word has NO rhymes to offer. Stay honest, then offer
+    // what we truly have - homophones and/or clearly-labeled assonance.
+    // Branch on RAW availability (not filtered counts) so a syllable filter
+    // can never strand the user on a page without the toolbar.
+    const rawSonic = currentRhymes.senses.some(function (s) { return s.sonic.length >= 3; });
+    const rawHomo = currentRhymes.homophones.length > 0;
+    if (!rawSonic && !rawHomo) {
+      results.innerHTML = '<div class="empty">No perfect rhymes for “<strong class="qw"></strong>”. Some words — famously <em>orange</em>, <em>silver</em>, and <em>month</em> — have no perfect rhyme in English.</div>';
+      results.querySelector('.qw').textContent = word;
       return;
     }
-    results.innerHTML = '<div class="empty">No perfect rhymes for “<strong class="qw"></strong>”. Some words — famously <em>orange</em>, <em>silver</em>, and <em>month</em> — have no perfect rhyme in English. Try a near rhyme or a related word.</div>';
-    results.querySelector('.qw').textContent = word;
+    let html = '<div class="results-head"><div class="results-title">“<span class="qw"></span>”</div>'
+      + (rawSonic ? '<button type="button" class="copy-btn" onclick="copyAll(this)">Copy all</button>' : '')
+      + '</div>'
+      + '<div class="empty" style="padding:0.75rem 0">No perfect or near rhymes for this word in our dictionary.'
+      + (rawSonic ? ' Below are common words that <em>share its vowel sound</em> — useful for slant rhymes.' : ' But it has homophones.') + '</div>';
+    if (rawSonic) html += toolbarHtml(false) + '<p class="hint">Tip: tap any word to rhyme it next.</p>';
+    if (sonicTotal === 0 && homophones.length === 0) {
+      html += '<div class="empty" style="padding:1.25rem 0">No matches for these filters. <button type="button" class="linklike" onclick="resetFilters()">Reset filters</button></div>';
+    } else {
+      senses.forEach(function (sense) {
+        if (!sense.sonic.length) return;
+        html += sectionLabel('Similar vowel sound — assonance', sense.sonic.length)
+          + '<p class="hint">These are not exact rhymes — they share a similar vowel sound.</p>'
+          + chipGrid(sense.sonic);
+      });
+      if (homophones.length) {
+        html += sectionLabel('Homophones — sound the same, not rhymes', homophones.length)
+          + '<p class="hint">These sound identical to your word, so they are not true rhymes.</p>'
+          + chipGrid(homophones);
+      }
+    }
+    results.innerHTML = html;
+    results.querySelectorAll('.qw').forEach(function (el) { el.textContent = word; });
     return;
   }
 
-  const senses = computeSenses();
   const total = senses.reduce(function (t, s) { return t + s.perfect.length + s.near.length; }, 0);
   const hasNear = currentRhymes.senses.some(function (s) { return s.near.length; });
 
@@ -402,28 +476,36 @@ function renderRhymes() {
     + toolbarHtml(hasNear)
     + '<p class="hint">Tip: tap any word to rhyme it next.</p>';
 
-  if (total === 0) {
+  if (total === 0 && sonicTotal === 0) {
     html += '<div class="empty" style="padding:1.25rem 0">No rhymes match these filters. <button type="button" class="linklike" onclick="resetFilters()">Reset filters</button></div>';
   } else {
     senses.forEach(function (sense, k) {
-      if (!sense.perfect.length && !sense.near.length) return;
+      if (!sense.perfect.length && !sense.near.length && !sense.sonic.length) return;
       if (senses.length > 1) {
-        const eg = sense.perfect[0] || sense.near[0] || '';
+        const eg = sense.perfect[0] || sense.near[0] || sense.sonic[0] || '';
         html += '<div class="sense-head">Pronunciation ' + (k + 1) + (eg ? ' — like “' + eg + '”' : '') + '</div>';
       }
       if (sense.perfect.length) {
         html += sectionLabel('Perfect rhymes', sense.perfect.length) + familyHint(sense.family) + renderPerfect(sense.perfect);
-      } else {
+      } else if (sense.near.length) {
         html += '<div class="empty" style="padding:0.6rem 0">No perfect rhymes for this pronunciation — showing near rhymes.</div>';
       }
       if (sense.near.length) {
         html += sectionLabel('Near rhymes — similar sound', sense.near.length) + chipGrid(sense.near);
+      }
+      if (sense.sonic.length) {
+        html += sectionLabel('Similar vowel sound — assonance', sense.sonic.length)
+          + '<p class="hint">These are not exact rhymes — they share a similar vowel sound.</p>'
+          + chipGrid(sense.sonic);
       }
     });
     if (homophones.length) {
       html += sectionLabel('Homophones — sound the same, not rhymes', homophones.length)
         + '<p class="hint">These sound identical to your word, so they are not true rhymes.</p>'
         + chipGrid(homophones);
+    }
+    if (senses.some(function (s) { return s.sonicHidden; })) {
+      html += '<div style="margin-top:1.1rem"><button type="button" class="linklike" onclick="revealSonic()">Show words with a similar vowel sound (assonance)</button></div>';
     }
   }
 
@@ -438,12 +520,17 @@ function copyText() {
   const seen = {};
   const perfect = [];
   const near = [];
+  const sonic = [];
   senses.forEach(function (s) { s.perfect.forEach(function (w) { if (!seen[w]) { seen[w] = 1; perfect.push(w); } }); });
   senses.forEach(function (s) { s.near.forEach(function (w) { if (!seen[w]) { seen[w] = 1; near.push(w); } }); });
-  if (!perfect.length && !near.length) return '';
-  const lines = ['Rhymes for "' + currentRhymes.word + '"'];
+  senses.forEach(function (s) { s.sonic.forEach(function (w) { if (!seen[w]) { seen[w] = 1; sonic.push(w); } }); });
+  if (!perfect.length && !near.length && !sonic.length) return '';
+  const lines = [(perfect.length || near.length)
+    ? 'Rhymes for "' + currentRhymes.word + '"'
+    : 'Words with a similar vowel sound to "' + currentRhymes.word + '"'];
   if (perfect.length) lines.push('Perfect: ' + perfect.join(', '));
   if (near.length) lines.push('Near: ' + near.join(', '));
+  if (sonic.length) lines.push('Similar vowel sound (not exact rhymes): ' + sonic.join(', '));
   return lines.join('\n');
 }
 

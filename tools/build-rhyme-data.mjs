@@ -28,6 +28,14 @@
 //       pronunciation is identical to another word's (sea/see). The UI lists
 //       these separately — homophones are not rhymes.
 //   x:  word indices that resolve as queries but are never OFFERED as rhymes.
+//   v:  per perfect-group ASSONANCE-class id (similar vowel sound). Class key =
+//       the tail's vowel sequence: anchor vowel kept exact, later (unstressed)
+//       vowels collapsed to schwa '@' when reduced (AH0/IH0/ER0 — heard as
+//       schwa) but kept when full-quality (the "happY" IY0 etc.), so
+//       orange(AO @) ~ storage/foreign, people(IY @) ~ fever/legal, but
+//       easy(IY IY) stays separate. Perfect groups are subsets of their
+//       assonance class by construction. The UI shows these clearly labeled
+//       as assonance — NEVER as rhymes.
 //
 // Rhyme-key algorithm:
 //   rhyme tail = phones from the LAST vowel carrying stress 1 OR 2 (primary or
@@ -124,6 +132,20 @@ function nearKeyOf(tail) {
 const syllables = phones => phones.filter(isVowel).length;
 const tailVowels = tail => tail.raw.filter(isVowel).length;
 
+// Assonance (similar-vowel-sound) key of a tail: the vowel sequence with the
+// anchor vowel kept exact and later unstressed vowels collapsed to '@' when
+// REDUCED (schwa-like). Everything after the anchor is stress-0 by construction
+// (the anchor is the LAST stress-1/2 vowel), so only the reduced/full split
+// matters there. Full-quality unstressed vowels (e.g. the final IY0 of "easy")
+// keep their identity so "easy" does not claim assonance with "people".
+const REDUCED = new Set(['AH0', 'IH0', 'ER0']);
+function assonanceKeyOf(tail) {
+  const vowels = tail.raw.filter(isVowel);
+  return vowels
+    .map((p, i) => (i > 0 && REDUCED.has(p)) ? '@' : p.replace(/\d$/, ''))
+    .join(' ');
+}
+
 // Parse CMUdict keeping ALL pronunciations per word (word, word(2), word(3)...).
 function parseCmudict(text) {
   const map = new Map();
@@ -185,7 +207,9 @@ async function main() {
   let s = '';
   const pkId = new Map();      // perfect key string -> group id
   const nkId = new Map();      // near key string -> near group id
+  const akId = new Map();      // assonance key string -> assonance class id
   const nearOf = [];           // per group id -> near group id | -1
+  const asnOf = [];            // per group id -> assonance class id
   let fam = '';                // per group id -> family digit (1/2/3)
   const fullPron = new Map();  // full primary pronunciation -> [word index...]
 
@@ -202,6 +226,10 @@ async function main() {
         if (nid === undefined) { nid = nkId.size; nkId.set(nk, nid); }
         nearOf[gid] = nid;
       }
+      const ak = assonanceKeyOf(tail);
+      let aid = akId.get(ak);
+      if (aid === undefined) { aid = akId.size; akId.set(ak, aid); }
+      asnOf[gid] = aid;
       fam += String(Math.min(3, tailVowels(tail)));
     }
     return gid;
@@ -248,19 +276,20 @@ async function main() {
       pronunciationSource: 'CMU Pronouncing Dictionary (cmusphinx/cmudict), BSD-2-Clause — full notice in data/NOTICE.md',
       frequencySource: 'Google Books Ngram Viewer datasets (CC BY 3.0, https://books.google.com/ngrams) via hackerb9/gwordlist frequency-alpha-alldicts.txt (data released CC BY 3.0)',
       attribution: 'Rank data derived from the Google Books Ngram Viewer datasets, CC BY 3.0, https://books.google.com/ngrams (via gwordlist, https://github.com/hackerb9/gwordlist). Pronunciations (C) 1993-2015 Carnegie Mellon University, BSD-2-Clause; see data/NOTICE.md.',
-      method: 'phonetic rhyme keys (last stress-1/2 vowel -> end); alternate pronunciations unioned; homophones split; near = same tail, final consonant may differ within manner class',
+      method: 'phonetic rhyme keys (last stress-1/2 vowel -> end); alternate pronunciations unioned; homophones split; near = same tail, final consonant may differ within manner class; assonance = tail vowel sequence, reduced unstressed vowels collapsed to schwa',
       words: w.length,
       perfectKeys: pkId.size,
       nearKeys: nkId.size,
+      assonanceKeys: akId.size,
     },
-    w, g, a2, s, n: nearOf, f: fam, h, x,
+    w, g, a2, s, n: nearOf, f: fam, h, x, v: asnOf,
   };
 
   mkdirSync('data', { recursive: true });
   const json = JSON.stringify(out);
   writeFileSync('data/rhymes.min.json', json);
   const gz = gzipSync(Buffer.from(json)).length;
-  console.error(`wrote data/rhymes.min.json  words=${w.length} perfectKeys=${pkId.size} nearKeys=${nkId.size} altWords=${Object.keys(a2).length} homophoneWords=${Object.keys(h).length} raw=${json.length}B gzip=${gz}B`);
+  console.error(`wrote data/rhymes.min.json  words=${w.length} perfectKeys=${pkId.size} nearKeys=${nkId.size} assonanceKeys=${akId.size} altWords=${Object.keys(a2).length} homophoneWords=${Object.keys(h).length} raw=${json.length}B gzip=${gz}B`);
 }
 
 main().catch(e => { console.error('BUILD FAILED:', e.message); process.exit(1); });
