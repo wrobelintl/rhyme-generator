@@ -48,9 +48,32 @@
 //   final phoneme (nasal/stop/fricative/affricate/liquid/glide): time(AY M) ~
 //   line(AY N), never like(AY K). Open-syllable tails get no near tier.
 //
-// Run:  node tools/build-rhyme-data.mjs
+// Run:  node tools/build-rhyme-data.mjs           (core file, as always)
+//       node tools/build-rhyme-data.mjs --deep    (Deep Search extension file)
+//
+// --deep builds data/deep/rhymes-deep.min.json, the OPTIONAL lazy-loaded
+// Deep Search extension (see docs/DEEP_SEARCH_ARCHITECTURE.md). It does NOT
+// touch data/rhymes.min.json: the committed core file is read as the source
+// of truth for group-id spaces, and the extension references those committed
+// ids directly. The build ABORTS if the fetched sources no longer reproduce
+// the committed core mappings (upstream drift), so a stale extension can
+// never be generated against a mismatched core. Extension format:
+//   coreWords/coreGroups: id-space offsets this file extends (guards mismatch).
+//   w:  deep words in frequency order; global word index = coreWords + i.
+//   g:  primary perfect-group id per deep word — ids < coreGroups join the
+//       committed core groups; ids >= coreGroups are new groups.
+//   a2: sparse { deepIndex: [extra group ids] } (alternate pronunciations).
+//   s:  syllable digit per deep word.
+//   n:  near-group id per NEW group (index = gid - coreGroups), -1 = none.
+//       Ids <= max core near id join existing core near groups.
+//   f:  family digit per NEW group.
+//   v:  assonance-class id per NEW group (existing class ids join core).
+//   h:  sparse { deepIndex: homophone-group id } — ids reuse core homophone
+//       groups where the pronunciation matches one.
+//   hc: sparse { coreWordIndex: homophone-group id } for CORE words that gain
+//       their first homophone via a deep word (core h stays untouched).
 
-import { writeFileSync, mkdirSync } from 'node:fs';
+import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { gzipSync } from 'node:zlib';
 
 const CMUDICT_URL = 'https://raw.githubusercontent.com/cmusphinx/cmudict/master/cmudict.dict';
@@ -292,4 +315,213 @@ async function main() {
   console.error(`wrote data/rhymes.min.json  words=${w.length} perfectKeys=${pkId.size} nearKeys=${nkId.size} assonanceKeys=${akId.size} altWords=${Object.keys(a2).length} homophoneWords=${Object.keys(h).length} raw=${json.length}B gzip=${gz}B`);
 }
 
-main().catch(e => { console.error('BUILD FAILED:', e.message); process.exit(1); });
+// ---------------------------------------------------------------------------
+// Deep Search extension builder (--deep). Measured basis for the cutoff: the
+// gwordlist band up to ~20k total words is predominantly real writer-useful
+// vocabulary; past ~30k the corpus tail turns to junk/non-words. 20k is also
+// what keeps the extension under the 100 KB gzip budget. Do not raise this
+// without re-eyeballing band samples AND re-measuring gzip size.
+const DEEP_TARGET_TOTAL = 20000;
+const DEEP_FILE = 'data/deep/rhymes-deep.min.json';
+const DEEP_GZ_BUDGET = 100 * 1024; // hard: preferred shard budget from the architecture note
+
+// Deep-band curation (measured against the actual 9.5k-20k band): 3-letter
+// tokens whose FIRST appearance is this deep in the frequency ranks are mostly
+// initialisms and name fragments (cia, hud, nec, jon, mba...), so deep
+// 3-letter words are allowlisted — every word below was eyeballed as a real
+// dictionary word a writer might rhyme. 1-2 letter words still go through
+// TWO_LETTER_REAL. 4+ letter words pass on frequency alone.
+const DEEP_SHORT_KEEP = new Set(['sol','bot','hog','oft','nil','yen','spy','bro','lea','ace',
+  'dew','hub','hop','rib','zip','din','aye','nod','ark','hue','elk','sap','axe','sow','cop',
+  'ale','jam','owl','opt','wee','tub','tow','rub','vat','woe','ski','yon','rum','elm','pea',
+  'fro','hum','wan','vet','ivy','gin','amp','aft','rig','tug','gem','roe','cue','spa','pal',
+  'abs','bug','pus','hug','tee','vow','vie','icy','sip','zoo','hem','peg','err','nun','rug',
+  'cad','wed','rip','rag','soy','ode','hew','sod','ply','urn','imp','ire','bog','dun','gym',
+  'pod','oat','ail','ebb','rap','cot','ape','lax','sew','nap','zen','hoe','cur','mug','sly',
+  'paw','jug','pew','eel','wig','flu','sag','oar','ohm','bra','coo','woo','elf','jig','ova',
+  'ado','asp','sob','gag','duo','bum','bun','pun','cub','ewe','pep','lug','mic','tic','tot',
+  'mod','wow']);
+
+// Offensive-in-common-use terms that surface in the deep band (the shared
+// PROFANITY set remains the family-safe baseline for both builds; these are
+// the additional hits found by sweeping the actual band).
+const DEEP_OFFENSIVE = new Set(['jap','japs','retard','retards','homo','homos','dyke','dykes',
+  'tit','git','coon','coons','gook','gooks','negro','negroes','fag','fags','twat','wank']);
+
+async function buildDeep() {
+  const core = JSON.parse(readFileSync('data/rhymes.min.json', 'utf8'));
+  console.error(`core: words=${core.w.length} groups=${core.n.length} (committed file is left untouched)`);
+
+  console.error('fetching CMUdict + gwordlist frequency data...');
+  const [cmuText, freqText] = await Promise.all([fetchText(CMUDICT_URL), fetchText(FREQ_URL)]);
+  const cmu = parseCmudict(cmuText);
+  const ranked = parseFreq(freqText);
+
+  // --- reconstruct the committed id spaces from core + sources (drift guards) ---
+  const pk2gid = new Map();   // perfect key -> committed group id
+  const gid2tail = new Map(); // committed group id -> tail (for near/asn/family of shared keys)
+  const fullPronCore = new Map(); // full primary pron -> [core word index...]
+  let drift = 0;
+  core.w.forEach((word, i) => {
+    const prons = cmu.get(word);
+    if (!prons) { drift++; return; }
+    const gids = [core.g[i], ...(core.a2[i] || [])];
+    const pks = [];
+    for (const phones of prons) {
+      const t = tailOf(phones);
+      if (!t) continue;
+      const k = perfectKeyOf(t);
+      if (!pks.some(p => p.k === k)) pks.push({ k, t });
+    }
+    pks.forEach((p, j) => {
+      if (j >= gids.length) return;
+      const prev = pk2gid.get(p.k);
+      if (prev === undefined) { pk2gid.set(p.k, gids[j]); gid2tail.set(gids[j], p.t); }
+      else if (prev !== gids[j]) drift++;
+    });
+    const fp = prons[0].join(' ');
+    (fullPronCore.get(fp) || fullPronCore.set(fp, []).get(fp)).push(i);
+  });
+  if (drift > 0 || pk2gid.size !== core.n.length) {
+    throw new Error(`upstream sources no longer reproduce the committed core ` +
+      `(drift=${drift}, reconstructed=${pk2gid.size}/${core.n.length}). ` +
+      `Rebuild the core first, ship it, then rebuild --deep.`);
+  }
+  // near/assonance id spaces: recompute each committed group's keys, map to its
+  // committed ids, and verify the mapping is consistent (same drift guard).
+  const nk2nid = new Map(), ak2aid = new Map();
+  let maxNid = -1, maxAid = -1, idDrift = 0;
+  for (const [gid, tail] of gid2tail) {
+    const nk = nearKeyOf(tail);
+    const nid = core.n[gid];
+    if (nid >= 0) {
+      if (nk === null) idDrift++;
+      else {
+        const prev = nk2nid.get(nk);
+        if (prev === undefined) nk2nid.set(nk, nid);
+        else if (prev !== nid) idDrift++;
+      }
+      maxNid = Math.max(maxNid, nid);
+    }
+    const ak = assonanceKeyOf(tail);
+    const aid = core.v[gid];
+    const prevA = ak2aid.get(ak);
+    if (prevA === undefined) ak2aid.set(ak, aid);
+    else if (prevA !== aid) idDrift++;
+    maxAid = Math.max(maxAid, aid);
+  }
+  if (idDrift > 0) throw new Error(`near/assonance id reconstruction drifted (${idDrift} conflicts) — rebuild core first.`);
+  console.error(`id spaces reconstructed: ${pk2gid.size} groups, ${nk2nid.size} near keys, ${ak2aid.size} assonance classes, 0 conflicts`);
+
+  // --- pick the deep band: next eligible ranked words after the core set ---
+  const coreSet = new Set(core.w);
+  const okWord = w =>
+    (w.length >= 4 || TWO_LETTER_REAL.has(w) || DEEP_SHORT_KEEP.has(w)) &&
+    !STOP.has(w) && !PROFANITY.has(w) && !DEEP_OFFENSIVE.has(w) &&
+    cmu.has(w) && !coreSet.has(w);
+  const deepWords = [];
+  for (const cand of ranked) {
+    if (core.w.length + deepWords.length >= DEEP_TARGET_TOTAL) break;
+    if (okWord(cand)) { deepWords.push(cand); coreSet.add(cand); }
+  }
+
+  // --- build the extension in the committed id spaces ---
+  const coreGroups = core.n.length;
+  let nextGid = coreGroups, nextNid = maxNid + 1, nextAid = maxAid + 1;
+  const newPk = new Map();
+  const w = [], g = [], nNew = [], vNew = [];
+  const a2 = {}, h = {}, hc = {};
+  let s = '', fNew = '';
+  const fullPron = new Map(); // full primary pron -> [deep relative index...]
+
+  const gidForTailDeep = tail => {
+    const pk = perfectKeyOf(tail);
+    let gid = pk2gid.get(pk);
+    if (gid !== undefined) return gid;
+    gid = newPk.get(pk);
+    if (gid !== undefined) return gid;
+    gid = nextGid++;
+    newPk.set(pk, gid);
+    const nk = nearKeyOf(tail);
+    if (nk === null) nNew.push(-1);
+    else {
+      let nid = nk2nid.get(nk);
+      if (nid === undefined) { nid = nextNid++; nk2nid.set(nk, nid); }
+      nNew.push(nid);
+    }
+    const ak = assonanceKeyOf(tail);
+    let aid = ak2aid.get(ak);
+    if (aid === undefined) { aid = nextAid++; ak2aid.set(ak, aid); }
+    vNew.push(aid);
+    fNew += String(Math.min(3, tailVowels(tail)));
+    return gid;
+  };
+
+  for (const word of deepWords) {
+    const prons = cmu.get(word);
+    const tails = [];
+    for (const phones of prons) {
+      const t = tailOf(phones);
+      if (t) tails.push(t);
+    }
+    if (!tails.length) continue;
+    const rel = w.length;
+    const gids = [];
+    for (const t of tails) {
+      const gid = gidForTailDeep(t);
+      if (!gids.includes(gid)) gids.push(gid);
+    }
+    g.push(gids[0]);
+    if (gids.length > 1) a2[rel] = gids.slice(1);
+    s += String(Math.min(9, syllables(prons[0])));
+    const fp = prons[0].join(' ');
+    (fullPron.get(fp) || fullPron.set(fp, []).get(fp)).push(rel);
+    w.push(word);
+  }
+
+  // --- homophones across the union: deep<->deep and deep<->core ---
+  let maxHid = -1;
+  for (const v of Object.values(core.h)) maxHid = Math.max(maxHid, v);
+  let nextHid = maxHid + 1;
+  for (const [fp, rels] of fullPron) {
+    const coreIdxs = fullPronCore.get(fp) || [];
+    if (rels.length + coreIdxs.length < 2) continue;
+    // reuse the committed group id if any core member already carries one
+    let hid;
+    for (const ci of coreIdxs) if (core.h[ci] !== undefined) { hid = core.h[ci]; break; }
+    if (hid === undefined) hid = nextHid++;
+    for (const rel of rels) h[rel] = hid;
+    for (const ci of coreIdxs) if (core.h[ci] === undefined) hc[ci] = hid;
+  }
+
+  const out = {
+    _m: {
+      generatedBy: 'tools/build-rhyme-data.mjs --deep',
+      role: 'OPTIONAL lazy-loaded Deep Search extension of data/rhymes.min.json — never fetched until the user explicitly asks (docs/DEEP_SEARCH_ARCHITECTURE.md)',
+      pronunciationSource: 'CMU Pronouncing Dictionary (cmusphinx/cmudict), BSD-2-Clause — full notice in data/NOTICE.md',
+      frequencySource: 'Google Books Ngram Viewer datasets (CC BY 3.0, https://books.google.com/ngrams) via hackerb9/gwordlist frequency-alpha-alldicts.txt (data released CC BY 3.0)',
+      attribution: 'Rank data derived from the Google Books Ngram Viewer datasets, CC BY 3.0, https://books.google.com/ngrams (via gwordlist, https://github.com/hackerb9/gwordlist). Pronunciations (C) 1993-2015 Carnegie Mellon University, BSD-2-Clause; see data/NOTICE.md.',
+      words: w.length,
+      newGroups: newPk.size,
+    },
+    coreWords: core.w.length,
+    coreGroups,
+    w, g, a2, s, n: nNew, f: fNew, v: vNew, h, hc,
+  };
+
+  mkdirSync('data/deep', { recursive: true });
+  const json = JSON.stringify(out);
+  const gz = gzipSync(Buffer.from(json)).length;
+  if (gz > DEEP_GZ_BUDGET) {
+    throw new Error(`deep extension is ${gz}B gzipped — over the ${DEEP_GZ_BUDGET}B budget. ` +
+      `Lower DEEP_TARGET_TOTAL instead of shipping this.`);
+  }
+  writeFileSync(DEEP_FILE, json);
+  console.error(`wrote ${DEEP_FILE}  deepWords=${w.length} newGroups=${newPk.size} ` +
+    `newNearIds=${nextNid - maxNid - 1} newAsnClasses=${nextAid - maxAid - 1} ` +
+    `deepHomophones=${Object.keys(h).length} coreHomophoneLinks=${Object.keys(hc).length} ` +
+    `raw=${json.length}B gzip=${gz}B`);
+}
+
+const run = process.argv.includes('--deep') ? buildDeep : main;
+run().catch(e => { console.error('BUILD FAILED:', e.message); process.exit(1); });

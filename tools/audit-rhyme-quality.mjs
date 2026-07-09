@@ -208,8 +208,9 @@ for (const w of CASES.familySafety.mustBeAbsent) {
     'query word rendered via textContent (escaping preserved, static check)');
   check(dim, true, !script.includes('${word}'), 'no raw ${word} interpolation in client script');
   const fetches = script.match(/fetch\('([^']+)'/g) || [];
-  check(dim, true, fetches.length === 1 && fetches[0].includes('data/rhymes.min.json'),
-    'only runtime fetch is same-origin data/rhymes.min.json');
+  check(dim, true, fetches.length === 2 && fetches.some(f => f.includes('data/rhymes.min.json'))
+    && fetches.some(f => f.includes('data/deep/rhymes-deep.min.json')),
+    'runtime fetches are exactly the two same-origin static data files (core eager, deep lazy)');
   const ext = html.match(/<script[^>]*\bsrc=[^>]*>/g) || [];
   check(dim, true, ext.length === 1 && ext[0].includes('adsbygoogle.js') && ext[0].includes('ca-pub-6286935824893984'),
     'only external script is the unchanged AdSense loader');
@@ -239,8 +240,8 @@ for (const w of CASES.familySafety.mustBeAbsent) {
   check(dim, true, script.includes('function copyAll') && script.includes('function copyText')
     && /navigator\.clipboard/.test(script) && /catch \(e\)/.test(script),
     'copy-all handler present, uses clipboard API, and is guarded (no throw)');
-  check(dim, true, (script.match(/fetch\(/g) || []).length === 1,
-    'copy/controls add no new fetch (clipboard is local; still a single data fetch)');
+  check(dim, true, (script.match(/fetch\(/g) || []).length === 2,
+    'copy/controls add no new fetch (clipboard is local; only the two static data fetches)');
   check(dim, true, script.includes('function setSort') && script.includes('function toggleNear')
     && script.includes('currentSort') && script.includes('includeNear'),
     'writer controls wired (sort: syllables/A-Z, include-near toggle)');
@@ -320,6 +321,57 @@ for (const w of CASES.familySafety.mustBeAbsent) {
     .map(m => m[1] === '' ? 'index.html' : m[1]).filter(p => !existsSync(p));
   check(dim, true, smMissing.length === 0,
     `every sitemap URL maps to an existing file${smMissing.length ? ' (missing: ' + smMissing.join(', ') + ')' : ''}`);
+}
+
+// ---------- 9c. Deep Search extension (lazy, optional, user-triggered) ----------
+{
+  const dim = 'deep-data';
+  const DEEP_PATH = 'data/deep/rhymes-deep.min.json';
+  check(dim, true, existsSync(DEEP_PATH), 'deep extension file exists');
+  if (existsSync(DEEP_PATH)) {
+    const deepRaw = readFileSync(DEEP_PATH);
+    let DP = null;
+    try { DP = JSON.parse(deepRaw); } catch (e) { /* fall through */ }
+    check(dim, true, !!DP, 'deep extension parses as JSON');
+    if (DP) {
+      check(dim, true, DP.coreWords === D.w.length && DP.coreGroups === D.n.length,
+        `deep extension matches this exact core build (${DP.coreWords}/${DP.coreGroups})`);
+      const deepGz = gzipSync(deepRaw).length;
+      check(dim, true, deepGz < 100_000, `deep gzip under 100 KB shard budget (${deepGz} B)`);
+      check(dim, true, DP.w.length === DP.g.length && DP.w.length === DP.s.length
+        && DP.n.length === DP._m.newGroups && DP.v.length === DP._m.newGroups && DP.f.length === DP._m.newGroups,
+        'deep arrays structurally aligned (w/g/s per word, n/f/v per new group)');
+      check(dim, true, DP.w.every(x => /^[a-z]+$/.test(x)), 'deep words all plain lowercase alphabetic');
+      const coreSet = new Set(D.w);
+      check(dim, true, DP.w.every(x => !coreSet.has(x)), 'deep words never duplicate core words');
+      const vulgar = ['fuck', 'shit', 'cunt', 'bitch', 'nigger', 'faggot', 'whore', 'slut',
+        'jap', 'retard', 'homo', 'dyke', 'git', 'tit', 'coon', 'gook', 'twat'];
+      const vhits = vulgar.filter(x => DP.w.includes(x));
+      check(dim, true, vhits.length === 0, `deep profanity/offensive sweep clean${vhits.length ? ' (' + vhits.join(',') + ')' : ''}`);
+      check(dim, true, /carnegie mellon/i.test(DP._m.attribution || '') && /ngram/i.test(DP._m.attribution || ''),
+        'deep attribution names CMU and Google Books Ngram');
+    }
+  }
+  // UI wiring: lazy, same-origin, constant URL, clearly labeled, user-triggered.
+  const s = html.indexOf('<script>');
+  const e = html.lastIndexOf('</script>');
+  const script = s >= 0 && e > s ? html.slice(s + 8, e) : '';
+  const fetches = [...script.matchAll(/fetch\(\s*'([^']+)'/g)].map(m => m[1]);
+  check(dim, true, fetches.length === 2
+    && fetches.includes('data/rhymes.min.json') && fetches.includes('data/deep/rhymes-deep.min.json'),
+    `script fetches exactly the two same-origin data files (${fetches.join(', ')})`);
+  check(dim, true, script.includes('rhymes-deep') && script.indexOf('\'data/deep/rhymes-deep.min.json\'') > script.indexOf('function deepSearch'),
+    'deep fetch lives inside the user-triggered deepSearch() only');
+  check(dim, true, script.includes('Search deeper dictionary'), 'CTA copy present: "Search deeper dictionary"');
+  check(dim, true, script.includes('This word is not in the quick dictionary'),
+    'unknown-word copy present: "This word is not in the quick dictionary"');
+  check(dim, true, script.includes('Want broader results?'), 'weak-result copy present: "Want broader results?"');
+  check(dim, true, script.includes('Loading expanded dictionary…'), 'loading copy present');
+  check(dim, true, script.includes('Deep Search</strong> — expanded dictionary. These results may include rarer words.'),
+    'deep results banner carries the required labels');
+  check(dim, true, script.includes('Could not load the expanded dictionary'), 'network-failure copy present');
+  check(dim, true, script.includes('deepActive = false') && script.includes('function lookup('),
+    'deep mode resets on every new search');
 }
 
 // ---------- 10. payload budgets ----------

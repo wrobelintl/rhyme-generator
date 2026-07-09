@@ -63,6 +63,15 @@
     .hint { font-size: 0.8rem; color: #718096; margin: 0.35rem 0 0.25rem; }
     .linklike { background: none; border: none; color: #667eea; font: inherit; font-weight: 700; cursor: pointer; padding: 0; text-decoration: underline; }
     .empty { color: #718096; font-size: 0.95rem; text-align: center; padding: 1.75rem 0.5rem; line-height: 1.6; }
+    .rhyme-word.deep { border-style: dashed; background: #fbfcff; }
+    .rhyme-word.deep:hover { background: #667eea; border-color: #667eea; color: #fff; }
+    .deep-banner { background: #f4f0fe; border: 1px solid #ddd2f7; border-radius: 10px; padding: 0.7rem 1rem; margin: 0.9rem 0 0.4rem; font-size: 0.88rem; color: #5b4a8f; line-height: 1.55; }
+    .deep-banner strong { color: #4a3a7d; }
+    .deep-cta { border-top: 1px dashed #e2e8f0; margin-top: 1.1rem; padding-top: 0.9rem; text-align: center; }
+    .deep-cta p { font-size: 0.9rem; color: #718096; margin-bottom: 0.5rem; }
+    .deep-btn { padding: 0.5rem 1.1rem; border-radius: 8px; border: 1px solid #b9c2f0; background: #edf0fe; font-size: 0.88rem; font-weight: 700; color: #4756a8; cursor: pointer; transition: all 0.15s; }
+    .deep-btn:hover { background: #667eea; border-color: #667eea; color: #fff; }
+    .deep-btn[disabled] { opacity: 0.6; cursor: default; }
     .empty em { color: #4a5568; font-style: normal; font-weight: 700; }
 
     .content-section { color: #4a5568; line-height: 1.7; }
@@ -103,6 +112,13 @@
       .results-title, .sense-head, .faq-q, .content-section h2, .content-section summary, .empty em { color: #edf0f7; }
       .section-title, .content-section { color: #b6c0d4; }
       .rhyme-word { background: #262a3b; border-color: #3a4157; color: #dbe2f0; }
+      .rhyme-word.deep { background: #21243a; border-color: #454e6e; }
+      .deep-banner { background: #2b2743; border-color: #4a4270; color: #c3b8ec; }
+      .deep-banner strong { color: #d7cdf5; }
+      .deep-cta { border-top-color: #333a4d; }
+      .deep-cta p { color: #9aa4b8; }
+      .deep-btn { background: #2f3350; border-color: #4a5480; color: #b9c2ee; }
+      .deep-btn:hover { background: #667eea; border-color: #667eea; color: #fff; }
       .rhyme-word:hover { background: #667eea; border-color: #667eea; color: #fff; }
       .content-section details { border-color: #333a4d; }
       .faq-item { border-color: #333a4d; }
@@ -275,6 +291,20 @@ let currentSort = 'syllables';    // 'syllables' (grouped, common-first) | 'az'
 let includeNear = true;           // show the near-rhyme tier
 let sonicRevealed = false;        // per-search: user opened the assonance tier
 
+// --- Deep Search (optional lazy extension; docs/DEEP_SEARCH_ARCHITECTURE.md) ---
+// data/deep/rhymes-deep.min.json is a same-origin static file extending the
+// core dictionary by ~10.5k rarer words in the SAME id spaces. It is fetched
+// from a CONSTANT URL only when the user clicks "Search deeper dictionary" -
+// never speculatively, and the URL carries nothing derived from the query, so
+// the "searches stay in your browser" promise holds for Deep Search too.
+// Deep results never mix into the default lists: they render in separate,
+// clearly-labeled sections, and deepActive resets on every new search.
+let DEEP = null;                  // raw extension data (sticky once loaded)
+let MERGED = null;                // combined core+deep lookup structures
+let deepLoading = false;
+let deepError = false;
+let deepActive = false;           // per-search: user asked for deep results
+
 // Pure grammatical auxiliaries/function words suppressed from the ASSONANCE
 // tier only (they never carry line stress, so they are useless as vowel
 // mates). Real rhyme words like "one/come/done/just/must" are deliberately
@@ -327,8 +357,108 @@ fetch('data/rhymes.min.json')
   .catch(function () { dataError = true; renderMessage('Sorry - rhyme data could not be loaded. Please refresh the page.'); });
 
 function sylOf(w) {
-  const i = DB.index.get(w);
-  return i === undefined ? 1 : +DB.d.s[i];
+  let i = DB.index.get(w);
+  if (i !== undefined) return +DB.d.s[i];
+  if (MERGED) { i = MERGED.index.get(w); if (i !== undefined) return MERGED.sylAt(i); }
+  return 1;
+}
+
+// Uniform accessors over the lookup structures, so the ONE lookup code path
+// serves both modes. Core mode is exactly the pre-Deep-Search behavior: every
+// index is < coreLen, so every "deep" split below comes out empty.
+function coreAccessors() {
+  const d = DB.d;
+  return {
+    index: DB.index, groups: DB.groups, nearGroups: DB.nearGroups, asnGroups: DB.asnGroups,
+    coreLen: d.w.length,
+    wordAt: function (j) { return d.w[j]; },
+    sylAt: function (j) { return +d.s[j]; },
+    gidsOf: function (j) { return [d.g[j]].concat(d.a2[j] || []); },
+    nOf: function (gid) { return d.n[gid]; },
+    vOf: function (gid) { return d.v ? d.v[gid] : undefined; },
+    fOf: function (gid) { return +d.f[gid]; },
+    hidOf: function (j) { return d.h[j]; },
+  };
+}
+
+// Build combined core+deep structures once per page life. Deep word j's global
+// index is coreLen + (j's position in DEEP.w); deep indices are appended after
+// core ones, so member arrays stay ascending == frequency-ordered.
+function buildMerged() {
+  const d = DB.d, dp = DEEP;
+  const coreLen = d.w.length;
+  const nOf = function (gid) { return gid < d.n.length ? d.n[gid] : dp.n[gid - d.n.length]; };
+  const vOf = function (gid) { return gid < d.v.length ? d.v[gid] : dp.v[gid - d.v.length]; };
+  const groups = DB.groups.map(function (a) { return a ? a.slice() : a; });
+  const nearGroups = DB.nearGroups.map(function (a) { return a ? a.slice() : a; });
+  const asnGroups = DB.asnGroups.map(function (a) { return a ? a.slice() : a; });
+  const index = new Map(DB.index);
+  const add = function (gid, j) {
+    (groups[gid] || (groups[gid] = [])).push(j);
+    const ng = nOf(gid);
+    if (ng >= 0) {
+      const arr = nearGroups[ng] || (nearGroups[ng] = []);
+      if (arr[arr.length - 1] !== j) arr.push(j);
+    }
+    const vg = vOf(gid);
+    if (vg !== undefined) { (asnGroups[vg] || (asnGroups[vg] = [])).push(j); }
+  };
+  dp.w.forEach(function (word, k) {
+    const j = coreLen + k;
+    index.set(word, j);
+    add(dp.g[k], j);
+    (dp.a2[k] || []).forEach(function (gid) { add(gid, j); });
+  });
+  asnGroups.forEach(function (a, k) {
+    if (a) asnGroups[k] = Array.from(new Set(a)).sort(function (x, y) { return x - y; });
+  });
+  MERGED = {
+    index: index, groups: groups, nearGroups: nearGroups, asnGroups: asnGroups,
+    coreLen: coreLen,
+    wordAt: function (j) { return j < coreLen ? d.w[j] : dp.w[j - coreLen]; },
+    sylAt: function (j) { return j < coreLen ? +d.s[j] : +dp.s[j - coreLen]; },
+    gidsOf: function (j) {
+      return j < coreLen
+        ? [d.g[j]].concat(d.a2[j] || [])
+        : [dp.g[j - coreLen]].concat(dp.a2[j - coreLen] || []);
+    },
+    nOf: nOf,
+    vOf: vOf,
+    fOf: function (gid) { return gid < d.f.length ? +d.f[gid] : +dp.f[gid - d.f.length]; },
+    // hc holds core words whose FIRST homophone partner arrived with the deep
+    // band; it must win over the (absent) core entry.
+    hidOf: function (j) {
+      if (j >= coreLen) return dp.h[j - coreLen];
+      return dp.hc[j] !== undefined ? dp.hc[j] : d.h[j];
+    },
+  };
+}
+
+// User-triggered ONLY: fetches the constant-URL extension file on first use
+// (nothing about the query is in the request), then re-runs the current word
+// with deep results revealed. Sticky data, per-search reveal.
+function deepSearch() {
+  if (!currentRhymes || deepLoading) return;
+  deepError = false;
+  if (MERGED) { deepActive = true; lookupAny(currentRhymes.word); return; }
+  deepLoading = true;
+  renderRhymes();
+  fetch('data/deep/rhymes-deep.min.json')
+    .then(function (r) { if (!r.ok) throw new Error('load'); return r.json(); })
+    .then(function (dp) {
+      // the extension is only valid against the exact core build it extends
+      if (dp.coreWords !== DB.d.w.length || dp.coreGroups !== DB.d.n.length) throw new Error('mismatch');
+      DEEP = dp;
+      buildMerged();
+      deepLoading = false;
+      deepActive = true;
+      lookupAny(currentRhymes.word);
+    })
+    .catch(function () {
+      deepLoading = false;
+      deepError = true;
+      renderRhymes();
+    });
 }
 
 function findRhymes() {
@@ -346,56 +476,85 @@ function runExample(w) {
 
 function lookup(word) {
   sonicRevealed = false; // assonance reveal is a per-search choice
-  const i = DB.index.get(word);
+  deepActive = false;    // deep results are a per-search choice too
+  deepError = false;
+  // Chained taps: once the user has explicitly loaded the expanded dictionary,
+  // tapping a deep-only word keeps it resolvable (still rendered under the
+  // Deep Search banner). The network fetch itself is only ever click-triggered.
+  if (MERGED && !DB.index.has(word) && MERGED.index.has(word)) deepActive = true;
+  lookupAny(word);
+}
+
+// One lookup path for both modes. In core mode every index is < coreLen, so
+// the deep side of each split stays empty and behavior is byte-for-byte the
+// pre-Deep-Search logic. In deep mode, core words land in the same default
+// lists as always and DEEP-ONLY words land in separate deep* arrays that
+// render under their own clearly-labeled sections.
+function lookupAny(word) {
+  const A = (deepActive && MERGED) ? MERGED : coreAccessors();
+  const i = A.index.get(word);
   if (i === undefined) {
-    currentRhymes = { word: word, known: false, senses: [], homophones: [] };
+    currentRhymes = { word: word, known: false, senses: [], homophones: [], deepHomophones: [], deepQuery: false };
     renderRhymes();
     return;
   }
-  const d = DB.d;
-  const gids = [d.g[i]].concat(d.a2[i] || []);
-  const hid = d.h[i];
-  const isHomophone = function (j) { return hid !== undefined && d.h[j] === hid; };
+  const gids = A.gidsOf(i);
+  const hid = A.hidOf(i);
+  const isHomophone = function (j) { return hid !== undefined && A.hidOf(j) === hid; };
+  const split = function (idxList, keep) {
+    const core = [], deep = [];
+    for (let k = 0; k < idxList.length; k++) {
+      const j = idxList[k];
+      if (!keep(j)) continue;
+      (j < A.coreLen ? core : deep).push(A.wordAt(j));
+    }
+    return { core: core, deep: deep };
+  };
 
-  const homophones = (DB.groups[d.g[i]] || [])
-    .filter(function (j) { return j !== i && isHomophone(j) && !DB.hidden.has(j); })
-    .map(function (j) { return d.w[j]; });
+  const homo = split(A.groups[gids[0]] || [], function (j) {
+    return j !== i && isHomophone(j) && !DB.hidden.has(j);
+  });
 
   const seenSonicClass = {}; // a homograph's senses can share one assonance class
   const senses = gids.map(function (gid) {
-    const members = DB.groups[gid] || [];
+    const members = A.groups[gid] || [];
     const inGroup = new Set(members);
-    const perfect = members
-      .filter(function (j) { return j !== i && !DB.hidden.has(j) && !isHomophone(j); })
-      .map(function (j) { return d.w[j]; });
-    let near = [];
+    const perfect = split(members, function (j) {
+      return j !== i && !DB.hidden.has(j) && !isHomophone(j);
+    });
+    let near = { core: [], deep: [] };
     let inNear = null;
-    const ng = d.n[gid];
+    const ng = A.nOf(gid);
     if (ng >= 0) {
-      const nearIdx = DB.nearGroups[ng] || [];
+      const nearIdx = A.nearGroups[ng] || [];
       inNear = new Set(nearIdx);
-      near = nearIdx
-        .filter(function (j) { return j !== i && !inGroup.has(j) && !DB.hidden.has(j) && !isHomophone(j); })
-        .map(function (j) { return d.w[j]; });
+      near = split(nearIdx, function (j) {
+        return j !== i && !inGroup.has(j) && !DB.hidden.has(j) && !isHomophone(j);
+      });
     }
     // Assonance tier: same tail vowel sounds, any consonants. Everything the
     // rhyme sections already show (or that is grammatical glue) is excluded,
     // so this list is strictly "beyond the rhymes" - and clearly labeled so.
-    let sonic = [];
-    const vid = d.v ? d.v[gid] : undefined;
+    let sonic = { core: [], deep: [] };
+    const vid = A.vOf(gid);
     if (vid !== undefined && !seenSonicClass[vid]) {
       seenSonicClass[vid] = true;
-      sonic = (DB.asnGroups[vid] || [])
-        .filter(function (j) {
-          return j !== i && !inGroup.has(j) && !(inNear && inNear.has(j))
-            && !DB.hidden.has(j) && !isHomophone(j) && !SONIC_STOP.has(d.w[j]);
-        })
-        .map(function (j) { return d.w[j]; });
+      sonic = split(A.asnGroups[vid] || [], function (j) {
+        return j !== i && !inGroup.has(j) && !(inNear && inNear.has(j))
+          && !DB.hidden.has(j) && !isHomophone(j) && !SONIC_STOP.has(A.wordAt(j));
+      });
     }
-    return { perfect: perfect, near: near, family: +d.f[gid], sonic: sonic };
+    return {
+      perfect: perfect.core, near: near.core, sonic: sonic.core, family: A.fOf(gid),
+      deepPerfect: perfect.deep, deepNear: near.deep, deepSonic: sonic.deep,
+    };
   });
 
-  currentRhymes = { word: word, known: true, senses: senses, homophones: homophones };
+  currentRhymes = {
+    word: word, known: true, senses: senses,
+    homophones: homo.core, deepHomophones: homo.deep,
+    deepQuery: i >= A.coreLen,
+  };
   renderRhymes();
 }
 
@@ -421,7 +580,17 @@ function computeSenses() {
     const hasSonic = sense.sonic.length >= 3;
     const sonicVisible = hasSonic && (sense.perfect.length === 0 || sonicRevealed);
     const sonic = sonicVisible ? sortMaybe(sense.sonic.filter(sylMatch)).slice(0, 24) : [];
-    return { perfect: perfect, near: near, family: sense.family, sonic: sonic, sonicHidden: hasSonic && !sonicVisible };
+    // Deep tiers are capped harder than the defaults on purpose: the deeper
+    // band is rarer by construction, and a short frequency-ordered list keeps
+    // it useful instead of junky.
+    const deepPerfect = deepActive ? sortMaybe(sense.deepPerfect.filter(sylMatch)).slice(0, 24) : [];
+    const deepNear = (deepActive && includeNear) ? sortMaybe(sense.deepNear.filter(sylMatch)).slice(0, 12) : [];
+    const deepSonic = deepActive ? sortMaybe(sense.deepSonic.filter(sylMatch)).slice(0, 12) : [];
+    return {
+      perfect: perfect, near: near, family: sense.family, sonic: sonic,
+      sonicHidden: hasSonic && !sonicVisible,
+      deepPerfect: deepPerfect, deepNear: deepNear, deepSonic: deepSonic,
+    };
   });
 }
 
@@ -441,6 +610,54 @@ function chipGrid(list) {
   return '<div class="rhyme-grid">' + list.map(function (w) {
     return '<div class="rhyme-word" onclick="runExample(\'' + esc(w) + '\')">' + w + '</div>';
   }).join('') + '</div>';
+}
+
+function chipGridDeep(list) {
+  return '<div class="rhyme-grid">' + list.map(function (w) {
+    return '<div class="rhyme-word deep" onclick="runExample(\'' + esc(w) + '\')">' + w + '</div>';
+  }).join('') + '</div>';
+}
+
+// The one entry point to Deep Search: an explicit button. Shown on the
+// unknown-word state and under weak results; never triggers a fetch by itself.
+function deepCtaHtml(prompt) {
+  if (deepActive) return '';
+  if (deepLoading) return '<div class="deep-cta"><p>Loading expanded dictionary…</p></div>';
+  const p = deepError
+    ? '<p>Could not load the expanded dictionary. Check your connection and try again.</p>'
+    : (prompt ? '<p>' + prompt + '</p>' : '');
+  return '<div class="deep-cta">' + p
+    + '<button type="button" class="deep-btn" onclick="deepSearch()">Search deeper dictionary</button></div>';
+}
+
+const DEEP_BANNER = '<div class="deep-banner"><strong>Deep Search</strong> — expanded dictionary. These results may include rarer words.</div>';
+
+// Deep additions render AFTER the default sections, each tier separately
+// labeled, never merged into the default lists.
+function deepSectionsHtml(senses) {
+  let html = '';
+  senses.forEach(function (sense, k) {
+    if (!sense.deepPerfect.length && !sense.deepNear.length && !sense.deepSonic.length) return;
+    if (senses.length > 1) html += '<div class="sense-head">Pronunciation ' + (k + 1) + ' — expanded dictionary</div>';
+    if (sense.deepPerfect.length) {
+      html += sectionLabel('Deep Search — more perfect rhymes', sense.deepPerfect.length) + chipGridDeep(sense.deepPerfect);
+    }
+    if (sense.deepNear.length) {
+      html += sectionLabel('Deep Search — more near rhymes', sense.deepNear.length) + chipGridDeep(sense.deepNear);
+    }
+    if (sense.deepSonic.length) {
+      html += sectionLabel('Deep Search — more similar vowel sounds (assonance)', sense.deepSonic.length)
+        + '<p class="hint">These are not exact rhymes — they share a similar vowel sound.</p>'
+        + chipGridDeep(sense.deepSonic);
+    }
+  });
+  const dh = currentRhymes.deepHomophones.filter(sylMatch);
+  if (dh.length) {
+    html += sectionLabel('Deep Search — homophones (sound the same, not rhymes)', dh.length)
+      + '<p class="hint">These sound identical to your word, so they are not true rhymes.</p>'
+      + chipGridDeep(dh);
+  }
+  return html;
 }
 
 function syllableGroups(list) {
@@ -493,12 +710,21 @@ function renderRhymes() {
   const word = currentRhymes.word;
 
   if (!currentRhymes.known) {
-    results.innerHTML = '<div class="empty">“<strong class="qw"></strong>” is not in our rhyming dictionary yet. Double-check the spelling, or try a simpler base word — for example search <em>light</em> instead of <em>moonlight</em>.</div>';
+    if (deepActive && MERGED) {
+      // The user already searched the expanded dictionary: honest empty state.
+      results.innerHTML = '<div class="empty">“<strong class="qw"></strong>” is not in the quick dictionary or the expanded dictionary. Double-check the spelling, or try a simpler base word — for example search <em>light</em> instead of <em>moonlight</em>.</div>';
+    } else {
+      results.innerHTML = '<div class="empty">This word is not in the quick dictionary. “<strong class="qw"></strong>” may still be in the expanded dictionary — or double-check the spelling, or try a simpler base word (search <em>light</em> instead of <em>moonlight</em>).</div>'
+        + deepCtaHtml('');
+    }
     results.querySelector('.qw').textContent = word;
     return;
   }
 
-  const rawHas = currentRhymes.senses.some(function (s) { return s.perfect.length || s.near.length; });
+  const rawHas = currentRhymes.senses.some(function (s) {
+    return s.perfect.length || s.near.length
+      || (deepActive && (s.deepPerfect.length || s.deepNear.length));
+  });
   const homophones = currentRhymes.homophones.filter(sylMatch);
   const senses = computeSenses();
   const sonicTotal = senses.reduce(function (t, s) { return t + s.sonic.length; }, 0);
@@ -511,13 +737,22 @@ function renderRhymes() {
     const rawSonic = currentRhymes.senses.some(function (s) { return s.sonic.length >= 3; });
     const rawHomo = currentRhymes.homophones.length > 0;
     if (!rawSonic && !rawHomo) {
-      results.innerHTML = '<div class="empty">No perfect rhymes for “<strong class="qw"></strong>”. Some words — famously <em>orange</em>, <em>silver</em>, and <em>month</em> — have no perfect rhyme in English.</div>';
-      results.querySelector('.qw').textContent = word;
+      let html = (deepActive ? DEEP_BANNER : '')
+        + '<div class="empty">No perfect rhymes for “<strong class="qw"></strong>”. Some words — famously <em>orange</em>, <em>silver</em>, and <em>month</em> — have no perfect rhyme in English.</div>';
+      if (deepActive) {
+        html += deepSectionsHtml(senses)
+          || '<div class="empty" style="padding:0.75rem 0">The expanded dictionary adds nothing new for this word.</div>';
+      } else {
+        html += deepCtaHtml('Want broader results?');
+      }
+      results.innerHTML = html;
+      results.querySelectorAll('.qw').forEach(function (el) { el.textContent = word; });
       return;
     }
     let html = '<div class="results-head"><div class="results-title">“<span class="qw"></span>”</div>'
       + (rawSonic ? '<button type="button" class="copy-btn" onclick="copyAll(this)">Copy all</button>' : '')
       + '</div>'
+      + (deepActive ? DEEP_BANNER : '')
       + '<div class="empty" style="padding:0.75rem 0">No perfect or near rhymes for this word in our dictionary.'
       + (rawSonic ? ' Below are common words that <em>share its vowel sound</em> — useful for slant rhymes.' : ' But it has homophones.') + '</div>';
     if (rawSonic) html += toolbarHtml(false) + '<p class="hint">Tip: tap any word to rhyme it next.</p>';
@@ -536,6 +771,12 @@ function renderRhymes() {
           + chipGrid(homophones);
       }
     }
+    if (deepActive) {
+      html += deepSectionsHtml(senses)
+        || '<div class="empty" style="padding:0.75rem 0">The expanded dictionary adds nothing new for this word.</div>';
+    } else {
+      html += deepCtaHtml('Want broader results?');
+    }
     results.innerHTML = html;
     results.querySelectorAll('.qw').forEach(function (el) { el.textContent = word; });
     return;
@@ -547,6 +788,7 @@ function renderRhymes() {
   let html = '<div class="results-head"><div class="results-title">Rhymes for “<span class="qw"></span>”'
     + (total ? ' <span class="count">· ' + total + (total === 1 ? ' result' : ' results') + '</span>' : '')
     + '</div><button type="button" class="copy-btn" onclick="copyAll(this)">Copy all</button></div>'
+    + (deepActive ? DEEP_BANNER : '')
     + toolbarHtml(hasNear)
     + '<p class="hint">Tip: tap any word to rhyme it next.</p>';
 
@@ -583,6 +825,18 @@ function renderRhymes() {
     }
   }
 
+  if (deepActive) {
+    html += deepSectionsHtml(senses)
+      || '<div class="empty" style="padding:0.75rem 0">The expanded dictionary adds nothing new for this word.</div>';
+  } else {
+    // Offer Deep Search only where it earns its click: thin perfect coverage,
+    // or a pending loading/error state that needs to stay visible.
+    const rawPerfectTotal = currentRhymes.senses.reduce(function (t, s) { return t + s.perfect.length; }, 0);
+    if (rawPerfectTotal < 8 || deepLoading || deepError) {
+      html += deepCtaHtml('Want broader results?');
+    }
+  }
+
   results.innerHTML = html;
   results.querySelectorAll('.qw').forEach(function (el) { el.textContent = word; });
 }
@@ -598,13 +852,22 @@ function copyText() {
   senses.forEach(function (s) { s.perfect.forEach(function (w) { if (!seen[w]) { seen[w] = 1; perfect.push(w); } }); });
   senses.forEach(function (s) { s.near.forEach(function (w) { if (!seen[w]) { seen[w] = 1; near.push(w); } }); });
   senses.forEach(function (s) { s.sonic.forEach(function (w) { if (!seen[w]) { seen[w] = 1; sonic.push(w); } }); });
-  if (!perfect.length && !near.length && !sonic.length) return '';
-  const lines = [(perfect.length || near.length)
+  const dPerfect = [], dNear = [], dSonic = [];
+  senses.forEach(function (s) { s.deepPerfect.forEach(function (w) { if (!seen[w]) { seen[w] = 1; dPerfect.push(w); } }); });
+  senses.forEach(function (s) { s.deepNear.forEach(function (w) { if (!seen[w]) { seen[w] = 1; dNear.push(w); } }); });
+  senses.forEach(function (s) { s.deepSonic.forEach(function (w) { if (!seen[w]) { seen[w] = 1; dSonic.push(w); } }); });
+  const deepAny = dPerfect.length || dNear.length || dSonic.length;
+  if (!perfect.length && !near.length && !sonic.length && !deepAny) return '';
+  const lines = [(perfect.length || near.length || dPerfect.length || dNear.length)
     ? 'Rhymes for "' + currentRhymes.word + '"'
     : 'Words with a similar vowel sound to "' + currentRhymes.word + '"'];
   if (perfect.length) lines.push('Perfect: ' + perfect.join(', '));
   if (near.length) lines.push('Near: ' + near.join(', '));
   if (sonic.length) lines.push('Similar vowel sound (not exact rhymes): ' + sonic.join(', '));
+  if (deepAny) lines.push('Deep Search - expanded dictionary (may include rarer words):');
+  if (dPerfect.length) lines.push('  Perfect: ' + dPerfect.join(', '));
+  if (dNear.length) lines.push('  Near: ' + dNear.join(', '));
+  if (dSonic.length) lines.push('  Similar vowel sound: ' + dSonic.join(', '));
   return lines.join('\n');
 }
 

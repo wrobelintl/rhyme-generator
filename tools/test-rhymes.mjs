@@ -179,5 +179,114 @@ ok(silverDedup.size === silverS.sonic.length, 'assonance lists contain no duplic
 const dayS = lookup('day');
 ok(some(dayS.sonic, ['made', 'state', 'name', 'place', 'take']), 'day assonance includes made/state/name (EY vowel mates)');
 
+// --- Deep Search extension (data/deep/rhymes-deep.min.json) ---
+// Mirrors the browser's buildMerged()/lookupAny() exactly the way the core
+// mirror above mirrors lookup(). The extension is committed alongside the UI
+// that consumes it, so these tests are unconditional.
+{
+  const deepRaw = readFileSync('data/deep/rhymes-deep.min.json');
+  const DP = JSON.parse(deepRaw);
+  ok(DP.coreWords === D.w.length && DP.coreGroups === D.n.length,
+    'deep: extension matches this exact core build (coreWords/coreGroups)');
+  ok(gzipSync(deepRaw).length < 100 * 1024, `deep: gzip under 100 KB (${gzipSync(deepRaw).length}B)`);
+  ok(DP.w.length === DP.g.length && DP.w.length === DP.s.length,
+    'deep: w/g/s arrays aligned');
+  ok(DP.n.length === DP._m.newGroups && DP.v.length === DP._m.newGroups && DP.f.length === DP._m.newGroups,
+    'deep: n/f/v cover exactly the new groups');
+  ok(DP.w.every(x => /^[a-z]+$/.test(x)), 'deep: all words plain lowercase alphabetic');
+  const coreSet = new Set(D.w);
+  ok(DP.w.every(x => !coreSet.has(x)), 'deep: zero overlap with the core dictionary');
+  const maxGid = DP.coreGroups + DP._m.newGroups;
+  ok(DP.g.every(x => x >= 0 && x < maxGid), 'deep: every group id within the combined id space');
+  ok(/carnegie mellon/i.test(DP._m.attribution) && /ngram/i.test(DP._m.attribution),
+    'deep: attribution names CMU and Google Books Ngram');
+  const vulgar = ['fuck', 'shit', 'cunt', 'bitch', 'nigger', 'faggot', 'whore', 'slut',
+    'jap', 'retard', 'homo', 'dyke', 'git', 'tit', 'coon', 'gook', 'twat'];
+  ok(vulgar.every(x => !DP.w.includes(x)), 'deep: profanity/offensive-term sweep clean');
+
+  // merged structures, exactly as the client builds them
+  const coreLen = D.w.length;
+  const mIndex = new Map(index);
+  const mGroups = groups.map(a => a && a.slice());
+  const mNear = nearGroups.map(a => a && a.slice());
+  const mAsn = asnGroups.map(a => a && a.slice());
+  const nOf = gid => gid < D.n.length ? D.n[gid] : DP.n[gid - D.n.length];
+  const vOf = gid => gid < D.v.length ? D.v[gid] : DP.v[gid - D.v.length];
+  const addM = (gid, j) => {
+    (mGroups[gid] ||= []).push(j);
+    const ng = nOf(gid);
+    if (ng >= 0) { const arr = mNear[ng] ||= []; if (arr[arr.length - 1] !== j) arr.push(j); }
+    const vg = vOf(gid);
+    if (vg !== undefined) (mAsn[vg] ||= []).push(j);
+  };
+  DP.w.forEach((word, k) => {
+    const j = coreLen + k;
+    mIndex.set(word, j);
+    addM(DP.g[k], j);
+    (DP.a2[k] || []).forEach(gid => addM(gid, j));
+  });
+  mAsn.forEach((a, k) => { if (a) mAsn[k] = Array.from(new Set(a)).sort((x, y) => x - y); });
+  const wordAt = j => j < coreLen ? D.w[j] : DP.w[j - coreLen];
+  const hidOf = j => j < coreLen ? (DP.hc[j] !== undefined ? DP.hc[j] : D.h[j]) : DP.h[j - coreLen];
+  const gidsOf = j => j < coreLen
+    ? [D.g[j], ...(D.a2[j] || [])]
+    : [DP.g[j - coreLen], ...(DP.a2[j - coreLen] || [])];
+
+  function lookupMerged(word) {
+    const i = mIndex.get(word);
+    if (i === undefined) return { known: false };
+    const gids = gidsOf(i);
+    const hid = hidOf(i);
+    const isHomo = j => hid !== undefined && hidOf(j) === hid;
+    const res = { known: true, perfect: [], deepPerfect: [], homophones: [], deepHomophones: [] };
+    for (const j of (mGroups[gids[0]] || [])) {
+      if (j !== i && isHomo(j) && !hidden.has(j)) (j < coreLen ? res.homophones : res.deepHomophones).push(wordAt(j));
+    }
+    for (const gid of gids) {
+      for (const j of (mGroups[gid] || [])) {
+        if (j === i || hidden.has(j) || isHomo(j)) continue;
+        (j < coreLen ? res.perfect : res.deepPerfect).push(wordAt(j));
+      }
+    }
+    return res;
+  }
+
+  // deep-only words resolve ONLY via the merged path (core stays core)
+  ok(!index.has('cute') && lookupMerged('cute').known, 'deep: "cute" unknown to core, resolves merged');
+  const cute = lookupMerged('cute');
+  ok(some(cute.perfect, ['boot', 'shoot', 'fruit', 'suit', 'flute']),
+    'deep: "cute" rhymes with common core words (boot/shoot/fruit tier)');
+  // deep words join committed core groups: a rhyme-poor word gains labeled deep rhymes
+  const sparkle = lookupMerged('sparkle');
+  ok(sparkle.known && sparkle.perfect.length + sparkle.deepPerfect.length > 0,
+    'deep: "sparkle" resolves with rhyme content');
+  // homophone separation must survive the merge: no homophone in any perfect list
+  let homoLeaks = 0, homoChecked = 0;
+  for (const rel of Object.keys(DP.h).slice(0, 200)) {
+    const word = DP.w[+rel];
+    const r = lookupMerged(word);
+    homoChecked++;
+    const partners = new Set(r.homophones.concat(r.deepHomophones));
+    if (r.perfect.some(x => partners.has(x)) || r.deepPerfect.some(x => partners.has(x))) homoLeaks++;
+  }
+  ok(homoChecked > 50 && homoLeaks === 0,
+    `deep: homophones never leak into perfect lists (${homoChecked} checked)`);
+  // measurable coverage win: top-2000 zero-perfect words gaining a deep rhyme
+  let rescued = 0, zeroPerfect = 0;
+  const deepGids = new Set(DP.g);
+  for (const e of Object.values(DP.a2)) e.forEach(gid => deepGids.add(gid));
+  for (let i = 0; i < Math.min(2000, D.w.length); i++) {
+    if (hidden.has(i)) continue;
+    const gids = [D.g[i], ...(D.a2[i] || [])];
+    const hid = D.h[i];
+    const isHomo = j => hid !== undefined && D.h[j] === hid;
+    const any = gids.some(g => (groups[g] || []).some(j => j !== i && !hidden.has(j) && !isHomo(j)));
+    if (any) continue;
+    zeroPerfect++;
+    if (gids.some(g => deepGids.has(g))) rescued++;
+  }
+  ok(rescued >= 100, `deep: rescues ${rescued}/${zeroPerfect} of top-2000 zero-perfect words with a real perfect rhyme`);
+}
+
 console.log(`\nRESULT: ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
