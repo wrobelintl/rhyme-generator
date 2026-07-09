@@ -226,6 +226,10 @@ for (const w of CASES.familySafety.mustBeAbsent) {
   check(dim, true, script.includes('Similar vowel sound (not exact rhymes):'),
     'copy-all labels assonance as not-exact-rhymes');
 
+  // ---- guide-page deep links (/?w=word): parsed locally, strictly validated ----
+  check(dim, true, script.includes('URLSearchParams') && script.includes('[a-z]{1,30}'),
+    'deep-link ?w= param is regex-validated before use (local parse only)');
+
   // ---- UI workflow affordances (client-side upgrade; must not add data/API/telemetry) ----
   const chipCount = (html.match(/class="chip"/g) || []).length;
   const exWords = ['love', 'time', 'day', 'night', 'horse', 'orange'];
@@ -244,6 +248,78 @@ for (const w of CASES.familySafety.mustBeAbsent) {
     'plain result section labels present (Perfect / Near / Homophones)');
   check(dim, false, /searches run in your browser/i.test(html) || /searches stay on your device/i.test(html),
     'in-browser privacy reassurance shown near the input');
+}
+
+// ---------- 9b. content pages + site link integrity ----------
+{
+  const dim = 'content-pages';
+  const GUIDES = ['rhyme-guide.html', 'near-rhymes.html', 'rhyme-schemes.html', 'songwriting-rhymes.html',
+    'poetry-rhymes.html', 'rap-rhymes.html', 'assonance.html', 'homophones.html'];
+  const missing = GUIDES.filter(f => !existsSync(f));
+  check(dim, true, missing.length === 0, `all 8 guide pages exist${missing.length ? ' (missing: ' + missing.join(', ') + ')' : ''}`);
+  const pages = GUIDES.filter(f => existsSync(f)).map(f => ({ f, t: readFileSync(f, 'utf8') }));
+
+  for (const { f, t } of pages) {
+    const scripts = t.match(/<script/g) || [];
+    check(dim, true, scripts.length === 1 && t.includes('adsbygoogle.js') && t.includes('ca-pub-6286935824893984'),
+      `${f}: only script is the AdSense loader`);
+    check(dim, true, !t.includes('{{') && !t.includes('}}'), `${f}: no unreplaced template placeholders`);
+    check(dim, true, t.includes('class="site-nav"') && t.includes('href="/#guides"'), `${f}: site navigation present`);
+    check(dim, true, t.includes(`<link rel="canonical" href="https://findmyrhyme.com/${f}">`), `${f}: canonical self-reference`);
+    check(dim, true, /<meta name="description" content="[^"]{40,}">/.test(t), `${f}: meta description present`);
+    check(dim, true, t.includes('class="try-box"') && t.includes('/?w='), `${f}: try-box links back to the rhyme tool`);
+    check(dim, true, t.includes('prefers-color-scheme: dark'), `${f}: dark-mode styles present`);
+    check(dim, true, !/fetch\(|localStorage|sessionStorage|document\.cookie|<form|<iframe|<img/.test(t),
+      `${f}: no runtime surface (fetch/storage/form/iframe/img)`);
+    const words = t.replace(/<script[\s\S]*?<\/script>/g, ' ').replace(/<style[\s\S]*?<\/style>/g, ' ')
+      .replace(/<[^>]+>/g, ' ').replace(/&[a-z]+;/g, ' ').replace(/\s+/g, ' ').trim().split(' ').length;
+    check(dim, false, words >= 700 && words <= 1500, `${f}: body word count in range (${words})`);
+  }
+
+  // Unsupportable marketing claims are banned sitewide (narrow phrases to avoid false positives).
+  const banned = ['best rhym', 'largest rhym', 'millions of', 'guaranteed', 'number one rhym', '#1 rhym', 'world-class'];
+  for (const { f, t } of pages.concat([{ f: 'index.html', t: html }])) {
+    const hits = banned.filter(b => t.toLowerCase().includes(b));
+    check(dim, true, hits.length === 0, `${f}: no unsupportable marketing claims${hits.length ? ' (' + hits.join('; ') + ')' : ''}`);
+  }
+
+  // Internal link integrity: every same-origin href in every root page must resolve to a real file.
+  const rootFiles = ['index.html', 'privacy.html', 'terms.html'].concat(GUIDES).filter(f => existsSync(f));
+  const broken = [];
+  for (const f of rootFiles) {
+    const t = readFileSync(f, 'utf8');
+    for (const m of t.matchAll(/href="([^"]+)"/g)) {
+      const h = m[1];
+      if (/^https?:\/\//.test(h) || h.startsWith('mailto:')) continue;
+      let p = h.split('#')[0].split('?')[0];
+      if (p === '') continue; // pure fragment/query link stays on-page
+      p = p === '/' ? 'index.html' : p.replace(/^\//, '');
+      if (p && !existsSync(p)) broken.push(`${f} -> ${h}`);
+    }
+  }
+  check(dim, true, broken.length === 0,
+    `no broken internal links${broken.length ? ' (' + broken.slice(0, 5).join(' | ') + ')' : ''}`);
+
+  // External anchor links limited to the existing allowlist (ad-loader script is checked elsewhere).
+  const extBad = [];
+  for (const f of rootFiles) {
+    const t = readFileSync(f, 'utf8');
+    for (const m of t.matchAll(/<a[^>]+href="(https?:\/\/[^"]+)"/g)) {
+      if (!/warrenbg\.com|adssettings\.google\.com/.test(m[1])) extBad.push(`${f} -> ${m[1]}`);
+    }
+  }
+  check(dim, true, extBad.length === 0,
+    `external anchor links limited to existing allowlist${extBad.length ? ' (' + extBad.slice(0, 5).join(' | ') + ')' : ''}`);
+
+  // Homepage integration + sitemap coverage.
+  check(dim, true, html.includes('id="guides"') && GUIDES.every(g => html.includes(`href="/${g}"`)),
+    'homepage #guides section links all 8 guide pages');
+  const sm = existsSync('sitemap.xml') ? readFileSync('sitemap.xml', 'utf8') : '';
+  check(dim, true, GUIDES.every(g => sm.includes(`https://findmyrhyme.com/${g}`)), 'sitemap lists all 8 guide pages');
+  const smMissing = [...sm.matchAll(/<loc>https:\/\/findmyrhyme\.com\/([^<]*)<\/loc>/g)]
+    .map(m => m[1] === '' ? 'index.html' : m[1]).filter(p => !existsSync(p));
+  check(dim, true, smMissing.length === 0,
+    `every sitemap URL maps to an existing file${smMissing.length ? ' (missing: ' + smMissing.join(', ') + ')' : ''}`);
 }
 
 // ---------- 10. payload budgets ----------

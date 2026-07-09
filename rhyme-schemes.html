@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Rhyme Schemes Explained: AABB, ABAB, ABCB and Beyond — FindMyRhyme</title>
+  <meta name="description" content="How rhyme schemes work, what AABB, ABAB and ABCB feel like to a reader, and how to choose and test a scheme for your poem or song.">
+  <link rel="canonical" href="https://findmyrhyme.com/rhyme-schemes.html">
+  <style>
+    :root { color-scheme: light dark; }
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); min-height: 100vh; color: #2d3748; }
+    .site-nav { max-width: 760px; margin: 0 auto; padding: 1.1rem 1rem 0; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 0.5rem; }
+    .site-nav .brand { color: #fff; font-weight: 800; font-size: 1.05rem; text-decoration: none; letter-spacing: -0.3px; }
+    .site-nav .links { display: flex; gap: 0.9rem; flex-wrap: wrap; }
+    .site-nav .links a { color: rgba(255,255,255,0.9); text-decoration: none; font-size: 0.88rem; font-weight: 600; }
+    .site-nav .links a:hover { color: #fff; text-decoration: underline; }
+    main { max-width: 760px; margin: 1rem auto 0; padding: 0 1rem 3rem; }
+    .crumbs { color: rgba(255,255,255,0.85); font-size: 0.8rem; margin: 0.4rem 0 0.9rem; }
+    .crumbs a { color: rgba(255,255,255,0.85); }
+    .card { background: #ffffff; border-radius: 16px; padding: 2rem; box-shadow: 0 8px 40px rgba(0,0,0,0.15); margin-bottom: 1.5rem; }
+    article h1 { font-size: 1.55rem; letter-spacing: -0.4px; margin-bottom: 0.4rem; color: #1a202c; }
+    .byline { color: #718096; font-size: 0.85rem; margin-bottom: 1.2rem; }
+    article h2 { font-size: 1.12rem; color: #2d3748; margin: 1.6rem 0 0.5rem; }
+    article h3 { font-size: 0.98rem; color: #2d3748; margin: 1.2rem 0 0.35rem; }
+    article p, article li { line-height: 1.75; color: #4a5568; }
+    article p { margin-bottom: 0.9rem; }
+    article ul, article ol { padding-left: 1.35rem; margin-bottom: 0.9rem; }
+    article li { margin-bottom: 0.35rem; }
+    article strong { color: #2d3748; }
+    .example { background: #f7fafc; border: 1px solid #e2e8f0; border-left: 4px solid #667eea; border-radius: 10px; padding: 0.85rem 1.1rem; margin: 0.9rem 0 1.1rem; }
+    .example p { margin: 0; font-style: italic; color: #4a5568; }
+    .example .note { font-style: normal; font-size: 0.85rem; color: #718096; margin-top: 0.45rem; }
+    .try-box { background: #edf0fe; border: 1px solid #c7d0f5; border-radius: 12px; padding: 1rem 1.2rem; margin: 1.4rem 0; }
+    .try-box .t { font-weight: 700; color: #37419b; font-size: 0.95rem; margin-bottom: 0.35rem; }
+    .try-box p { margin: 0 0 0.55rem; font-size: 0.92rem; color: #4756a8; }
+    .try-box a.word { display: inline-block; padding: 0.3rem 0.8rem; border-radius: 99px; background: #fff; border: 1px solid #b9c2f0; color: #4756a8; font-weight: 600; font-size: 0.85rem; text-decoration: none; margin: 0 0.3rem 0.3rem 0; }
+    .try-box a.word:hover { background: #667eea; border-color: #667eea; color: #fff; }
+    .related { margin-top: 1.6rem; padding-top: 1rem; border-top: 1px solid #e2e8f0; }
+    .related .t { font-size: 0.8rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: #a0aec0; margin-bottom: 0.55rem; }
+    .related a { display: inline-block; margin: 0 0.75rem 0.4rem 0; color: #4756a8; font-weight: 600; font-size: 0.9rem; }
+    footer { text-align: center; padding: 1.5rem; color: rgba(255,255,255,0.75); font-size: 0.82rem; }
+    footer a { color: rgba(255,255,255,0.8); margin: 0 0.5rem; }
+    @media (prefers-color-scheme: dark) {
+      body { background: linear-gradient(135deg, #232136 0%, #2a1e3a 100%); color: #e2e8f0; }
+      .card { background: #1e2030; box-shadow: 0 8px 40px rgba(0,0,0,0.4); }
+      article h1, article h2, article h3, article strong { color: #edf0f7; }
+      article p, article li { color: #b6c0d4; }
+      .byline { color: #9aa4b8; }
+      .example { background: #262a3b; border-color: #3a4157; border-left-color: #667eea; }
+      .example p { color: #c3cbdd; }
+      .example .note { color: #9aa4b8; }
+      .try-box { background: #2f3350; border-color: #4a5480; }
+      .try-box .t { color: #c3ccf5; }
+      .try-box p { color: #b9c2ee; }
+      .try-box a.word { background: #262a3b; border-color: #3a4157; color: #b9c2ee; }
+      .try-box a.word:hover { background: #667eea; border-color: #667eea; color: #fff; }
+      .related { border-top-color: #333a4d; }
+      .related a { color: #b9c2ee; }
+    }
+  </style>
+  <script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-6286935824893984" crossorigin="anonymous"></script>
+</head>
+<body>
+
+<nav class="site-nav">
+  <a class="brand" href="/">FindMyRhyme</a>
+  <div class="links">
+    <a href="/">Rhyme Tool</a>
+    <a href="/#guides">All Guides</a>
+  </div>
+</nav>
+
+<main>
+  <div class="crumbs"><a href="/">Home</a> › <a href="/#guides">Guides</a> › Rhyme Schemes</div>
+
+  <div class="card">
+    <article>
+      <h1>Rhyme Schemes: AABB, ABAB, ABCB and Beyond</h1>
+      <p class="byline">A FindMyRhyme writing guide</p>
+
+      <p>A rhyme scheme is the pattern of end rhymes in a stanza, written out as letters. Lines that rhyme with each other share a letter, so AABB means the first two lines rhyme as one pair and the next two rhyme as a different pair. The notation is simple; the craft is in picking a pattern that matches what the stanza is trying to do. This guide covers the three schemes you will meet most often, what each feels like to a reader, and a fast way to test one before you write yourself into a corner.</p>
+
+      <h2>How the letter notation works</h2>
+      <p>Read down the stanza and look only at the last word of each line. The first end sound you meet is labeled A. Every later line that rhymes with it also gets an A. The next new sound gets a B, then a C, and so on.</p>
+      <p>A four-line stanza ending in <strong>day, way, night, bright</strong> is AABB. Reorder those same end words to <strong>day, night, way, bright</strong> and you have ABAB. If only the second and fourth lines rhyme, with endings like <strong>road, sky, fast, why</strong>, the scheme is ABCB, and the lone C line rhymes with nothing.</p>
+      <p>One habit makes the notation useful rather than academic: the letters describe <strong>sound, not spelling</strong>. If two line endings rhyme to the ear, they share a letter even when they look nothing alike on the page.</p>
+
+      <h2>AABB: the couplet</h2>
+      <p>AABB pairs its rhymes immediately. The payoff arrives every two lines, which gives the stanza drive and a strong sense of closure. Each couplet clicks shut like a lid before the next one opens.</p>
+      <div class="example">
+        <p>The morning light slips through the door, (A)<br>and spreads across the kitchen floor. (A)<br>I hear the kettle start to sing, (B)<br>and wonder what the day will bring. (B)</p>
+        <p class="note">Each pair resolves at once: door/floor closes completely before sing/bring even begins.</p>
+      </div>
+      <p>The risk is sing-song. Because the ear gets its reward so quickly, couplets can tip into a nursery-rhyme bounce, especially when every line runs the same length and the rhymes are predictable. Couplets shine when you want punch: jokes, slogans, a closing pair that ends a poem with a snap. If a serious stanza keeps sounding chirpy, the couplet scheme is often the culprit.</p>
+
+      <h2>ABAB: the interlocking quatrain</h2>
+      <p>ABAB alternates its rhymes, so the first sound has to wait a full line before it resolves. That delay makes the reader hold something in mind, and the holding creates forward motion. Instead of stopping every two lines, the stanza pulls you through all four.</p>
+      <div class="example">
+        <p>The rain kept up for half the day, (A)<br>and pooled along the garden wall. (B)<br>By dusk the clouds had drained away, (A)<br>and one last drop began to fall. (B)</p>
+        <p class="note">Day has to wait for away, and wall for fall; the crossed pattern stitches four lines into one unit.</p>
+      </div>
+      <p>ABAB suits verses that build: an argument, a scene that develops, a feeling that deepens. The cost is workload. You now have two rhyme pairs alive at once, and both must land without twisting the sentence out of shape.</p>
+
+      <h2>ABCB: the ballad stanza</h2>
+      <p>In ABCB, only the second and fourth lines rhyme; lines one and three are free. This is the loose, roomy scheme of traditional ballads, and it is the easiest of the three to pull off, because each stanza asks you to land exactly one rhyme.</p>
+      <div class="example">
+        <p>We walked along the empty road (A)<br>beneath a fading sky. (B)<br>You said the summer went too fast. (C)<br>I didn't ask you why. (B)</p>
+        <p class="note">Only sky/why rhyme; road and fast carry no rhyme duty, so those lines can say exactly what they mean.</p>
+      </div>
+      <p>If rhyme keeps forcing your sentences into knots, switch the stanza to ABCB. Half of your lines stop needing rhymes at all, and the single B rhyme is still enough to make the stanza feel finished. It also suits storytelling: the plot moves in the free lines, and the rhyme quietly seals each stanza.</p>
+
+      <h2>Internal rhyme: patterns inside the line</h2>
+      <p>A rhyme scheme describes end words, but rhyme can also live mid-line. Internal rhyme plants a rhyming word inside a line, often echoing that line's own ending, and it adds density without changing the letters at all.</p>
+      <div class="example">
+        <p>I made my way at break of day along the harbor wall,<br>and heard the rain against the pane before the night could fall.</p>
+        <p class="note">Way/day and rain/pane rhyme inside their lines while wall/fall still carry the end scheme.</p>
+      </div>
+      <p>Used lightly, internal rhyme makes lines feel woven. Used everywhere, it crowds the sentence and competes with the end rhymes. Treat it as seasoning on top of whichever scheme you have chosen.</p>
+
+      <h2>Choose by effect, not fashion</h2>
+      <p>There is no correct scheme, only a fit between pattern and purpose:</p>
+      <ul>
+        <li><strong>AABB</strong> when you want punch, wit, or a decisive close.</li>
+        <li><strong>ABAB</strong> when the stanza needs to move: narrative, argument, rising emotion.</li>
+        <li><strong>ABCB</strong> when plain speech matters more than pattern and you want room to say things directly.</li>
+      </ul>
+      <p>You can also mix. A song can run loose ABCB verses into a tight AABB chorus, so the hook feels more locked-down than the storytelling around it. Whatever you pick, read the stanza aloud. Your ear will catch a bounce or a drag long before your eye does.</p>
+
+      <h2>Test the scheme before you commit</h2>
+      <p>The classic scheme mistake is discovering at line thirty that one rhyme slot is starved. A word like orange in the B slot means pain: no perfect rhymes exist for it, so every stanza built on it will fight you. Check your slots up front:</p>
+      <ol>
+        <li>Sketch the stanza's end words before polishing any lines.</li>
+        <li>Type each planned rhyme word into the rhyme tool. It runs entirely in your browser, free, with no sign-up, and searches are never sent to a server.</li>
+        <li>Look at the perfect rhymes first. If a slot turns up only a few usable candidates, or the tool falls back to its similar-vowel assonance tier because no perfect rhyme exists, swap that end word now, while it costs nothing.</li>
+        <li>Use the syllable grouping to keep candidates that fit your meter, and open the near rhymes when the perfect list feels stale.</li>
+      </ol>
+      <p>A scheme is only as strong as its thinnest rhyme slot. Two minutes of checking saves an evening of forcing.</p>
+
+      <div class="try-box">
+        <div class="t">Try it in the rhyme tool</div>
+        <p>Pick an end word for each slot of your stanza and see how deep its rhyme pool runs before you commit a single line to it.</p>
+        <a class="word" href="/?w=day">day</a>
+        <a class="word" href="/?w=night">night</a>
+        <a class="word" href="/?w=rain">rain</a>
+        <a class="word" href="/?w=gold">gold</a>
+      </div>
+
+      <div class="related">
+        <div class="t">Related guides</div>
+        <a href="/rhyme-guide.html">What makes words rhyme</a>
+        <a href="/poetry-rhymes.html">Rhyme in poetry</a>
+        <a href="/songwriting-rhymes.html">Rhymes in songwriting</a>
+        <a href="/rap-rhymes.html">Rap rhymes and flow</a>
+      </div>
+    </article>
+  </div>
+</main>
+
+<footer>
+  © 2026 FindMyRhyme.com — Free rhyme generator and writing resource
+  <span style="display:block;margin-top:0.35rem"><a href="/">Rhyme Tool</a> · <a href="/#guides">Guides</a> · <a href="/privacy.html">Privacy Policy</a> · <a href="/terms.html">Terms of Use</a></span>
+  <p style="margin-top:0.5rem">A service of <a href="https://warrenbg.com" style="color:#f59e0b;font-weight:700;">Warren Business Group</a> &mdash; Building AI-powered businesses.</p>
+</footer>
+</body>
+</html>

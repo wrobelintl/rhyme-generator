@@ -5,14 +5,19 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Rhyme Generator — Find Rhyming Words Instantly</title>
-  <meta name="description" content="Find rhyming words instantly with our free online rhyme generator. Perfect for poets, songwriters, teachers, and students. Type any word and get rhymes in seconds.">
-  <meta name="keywords" content="rhyme generator, rhyming words, find rhymes, online rhyme tool, words that rhyme, poem rhyme finder">
+  <meta name="description" content="Free rhyme generator and writing resource for songwriters, poets, rappers, and creative writers. Find perfect rhymes, near rhymes, homophones, and assonance — plus practical guides to rhyme craft.">
+  <meta name="keywords" content="rhyme generator, rhyming words, find rhymes, online rhyme tool, words that rhyme, rhyme schemes, near rhymes, assonance">
   <link rel="canonical" href="https://findmyrhyme.com/">
   <style>
     :root { color-scheme: light dark; }
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); min-height: 100vh; color: #2d3748; }
-    header { color: white; padding: 1.5rem 1.5rem 0.5rem; text-align: center; }
+    .site-nav { max-width: 720px; margin: 0 auto; padding: 1.1rem 1rem 0; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 0.5rem; }
+    .site-nav .brand { color: #fff; font-weight: 800; font-size: 1.05rem; text-decoration: none; letter-spacing: -0.3px; }
+    .site-nav .links { display: flex; gap: 0.9rem; flex-wrap: wrap; }
+    .site-nav .links a { color: rgba(255,255,255,0.9); text-decoration: none; font-size: 0.88rem; font-weight: 600; }
+    .site-nav .links a:hover { color: #fff; text-decoration: underline; }
+    header { color: white; padding: 1rem 1.5rem 0.5rem; text-align: center; }
     header h1 { font-size: 1.8rem; font-weight: 800; letter-spacing: -0.5px; }
     header p { opacity: 0.92; font-size: 0.95rem; margin-top: 0.4rem; max-width: 34rem; margin-left: auto; margin-right: auto; }
     main { max-width: 720px; margin: 1.5rem auto; padding: 0 1rem 3rem; }
@@ -68,6 +73,13 @@
     .content-section details { border: 1px solid #e2e8f0; border-radius: 10px; padding: 0.5rem 0.9rem; margin: 0.6rem 0; }
     .content-section summary { cursor: pointer; font-weight: 700; color: #2d3748; font-size: 0.92rem; }
     .content-section details p { margin-top: 0.5rem; font-size: 0.9rem; }
+    .guide-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 0.75rem; margin-top: 1rem; }
+    .guide-card { display: block; background: #f7fafc; border: 1px solid #e2e8f0; border-radius: 12px; padding: 0.9rem 1rem; text-decoration: none; transition: border-color 0.15s, transform 0.15s; }
+    .guide-card:hover { border-color: #667eea; transform: translateY(-1px); }
+    .guide-card .gt { font-weight: 700; color: #2d3748; font-size: 0.92rem; margin-bottom: 0.3rem; }
+    .guide-card .gd { color: #718096; font-size: 0.82rem; line-height: 1.5; }
+    .provenance { font-size: 0.85rem; color: #718096; border-top: 1px solid #e2e8f0; margin-top: 1.25rem; padding-top: 0.9rem; line-height: 1.7; }
+    .provenance a { color: #4756a8; }
     .faq-item { border-top: 1px solid #e2e8f0; padding: 0.85rem 0; }
     .faq-q { font-weight: 700; color: #2d3748; margin-bottom: 0.25rem; font-size: 0.92rem; }
     .faq-a { font-size: 0.9rem; }
@@ -94,15 +106,29 @@
       .rhyme-word:hover { background: #667eea; border-color: #667eea; color: #fff; }
       .content-section details { border-color: #333a4d; }
       .faq-item { border-color: #333a4d; }
+      .guide-card { background: #262a3b; border-color: #3a4157; }
+      .guide-card:hover { border-color: #667eea; }
+      .guide-card .gt { color: #edf0f7; }
+      .guide-card .gd { color: #9aa4b8; }
+      .provenance { border-top-color: #333a4d; color: #9aa4b8; }
+      .provenance a { color: #b9c2ee; }
     }
   </style>
   <script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-6286935824893984" crossorigin="anonymous"></script>
 </head>
 <body>
 
+<nav class="site-nav">
+  <a class="brand" href="/">FindMyRhyme</a>
+  <div class="links">
+    <a href="#guides">Writing Guides</a>
+    <a href="/rhyme-guide.html">What Is a Rhyme?</a>
+  </div>
+</nav>
+
 <header>
   <h1>Rhyme Generator</h1>
-  <p>A free rhyme finder for songwriters, rappers, poets, and writers — pronunciation-based, instant, no sign-up.</p>
+  <p>A free rhyme generator and writing resource for songwriters, poets, rappers, and creative writers — pronunciation-based, instant, no sign-up.</p>
 </header>
 
 <main>
@@ -140,7 +166,12 @@
 
     <details>
       <summary>What is a homophone?</summary>
-      <p>Homophones sound <em>identical</em> to your word (<em>sea / see</em>, <em>their / there</em>). Because they sound the same rather than rhyme, we list them separately — handy for wordplay, but not a rhyme for your line.</p>
+      <p>Homophones sound <em>identical</em> to your word (<em>sea / see</em>, <em>their / there</em>). Because they sound the same rather than rhyme, we list them separately — handy for wordplay, but not a rhyme for your line. More in our <a href="/homophones.html">homophones guide</a>.</p>
+    </details>
+
+    <details>
+      <summary>What is assonance (similar vowel sound)?</summary>
+      <p>Assonance is a shared <em>vowel</em> sound with different consonants (<em>time / line / high</em>). It is not a rhyme, but it binds lines together and rescues words with no perfect rhyme — search <em>orange</em> or <em>silver</em> to see it in action. More in our <a href="/assonance.html">assonance guide</a>.</p>
     </details>
 
     <h2>Who it is for</h2>
@@ -165,15 +196,58 @@
       </div>
       <div class="faq-item">
         <div class="faq-q">Why did my word return nothing?</div>
-        <div class="faq-a">Either it is not in our dictionary of common words, or it genuinely has no perfect rhyme in English (like <em>orange</em>). We would rather show nothing than invent a fake rhyme.</div>
+        <div class="faq-a">Either it is not in our dictionary of common words, or it genuinely has no perfect rhyme in English (like <em>orange</em>). We would rather show nothing than invent a fake rhyme — though for rhyme-poor words the tool now offers clearly-labeled <a href="/assonance.html">similar vowel sounds</a> instead.</div>
       </div>
+    </div>
+
+    <div class="provenance">
+      <strong>About this site &amp; our data.</strong> FindMyRhyme is an independent writing tool from Warren Business Group. Rhymes are matched by pronunciation: the sound data is derived from the Carnegie Mellon Pronouncing Dictionary (BSD license) and word-frequency ranks from the Google Books Ngram datasets (CC BY 3.0) — <a href="/data/NOTICE.md">full attribution and license notices</a>. The dictionary focuses on roughly 9,500 common English words, curated for quality over raw size.
+    </div>
+  </div>
+
+  <div class="card content-section" id="guides">
+    <h2>Writing Guides</h2>
+    <p>Original, practical guides to rhyme and sound craft — written for this site, with examples you can test in the rhyme tool above.</p>
+    <div class="guide-grid">
+      <a class="guide-card" href="/rhyme-guide.html">
+        <div class="gt">What Is a Rhyme?</div>
+        <div class="gd">Perfect vs. near rhymes, masculine and feminine endings, and how to pick rhymes that serve the line.</div>
+      </a>
+      <a class="guide-card" href="/near-rhymes.html">
+        <div class="gt">Near Rhymes &amp; Slant Rhymes</div>
+        <div class="gd">When an imperfect match beats a perfect one — and how not to overdo it.</div>
+      </a>
+      <a class="guide-card" href="/rhyme-schemes.html">
+        <div class="gt">Rhyme Schemes</div>
+        <div class="gd">AABB, ABAB, ABCB and internal rhyme, with examples and how to choose one.</div>
+      </a>
+      <a class="guide-card" href="/songwriting-rhymes.html">
+        <div class="gt">Rhymes in Songwriting</div>
+        <div class="gd">A practical workflow for verses, choruses and hooks — without forced lines.</div>
+      </a>
+      <a class="guide-card" href="/poetry-rhymes.html">
+        <div class="gt">Rhyme in Poetry</div>
+        <div class="gd">End rhyme, internal rhyme and imperfect rhyme in formal and free verse.</div>
+      </a>
+      <a class="guide-card" href="/rap-rhymes.html">
+        <div class="gt">Rap Rhymes &amp; Multis</div>
+        <div class="gd">Multisyllabic patterns, internal rhyme, and building flow on vowel sounds.</div>
+      </a>
+      <a class="guide-card" href="/assonance.html">
+        <div class="gt">Assonance</div>
+        <div class="gd">Using similar vowel sounds — and rescuing "unrhymable" words like orange.</div>
+      </a>
+      <a class="guide-card" href="/homophones.html">
+        <div class="gt">Homophones</div>
+        <div class="gd">Sound-twins like sea/see: why they are not rhymes, and what they are good for.</div>
+      </a>
     </div>
   </div>
 </main>
 
 <footer>
-  © 2026 FindMyRhyme.com — Free rhyme generator for poets and songwriters
-  <span style="display:block;margin-top:0.35rem"><a href="/privacy.html">Privacy Policy</a> · <a href="/terms.html">Terms of Use</a></span>
+  © 2026 FindMyRhyme.com — Free rhyme generator and writing resource for poets and songwriters
+  <span style="display:block;margin-top:0.35rem"><a href="#guides">Writing Guides</a> · <a href="/privacy.html">Privacy Policy</a> · <a href="/terms.html">Terms of Use</a></span>
   <p style="margin-top:0.5rem">A service of <a href="https://warrenbg.com" style="color:#f59e0b;font-weight:700;">Warren Business Group</a> &mdash; Building AI-powered businesses.</p>
 </footer>
 
@@ -572,6 +646,21 @@ function copyAll(btn) {
     }
   } catch (e) { fail(); }
 }
+
+// Deep links from the guide pages: /?w=word searches on arrival. The value is
+// parsed locally from the URL, validated to plain lowercase letters, and never
+// transmitted anywhere - the "searches stay in your browser" promise holds.
+(function () {
+  try {
+    if (typeof location === 'undefined') return;
+    const q = new URLSearchParams(location.search).get('w');
+    if (!q) return;
+    const w = q.trim().toLowerCase();
+    if (!/^[a-z]{1,30}$/.test(w)) return;
+    document.getElementById('wordInput').value = w;
+    findRhymes();
+  } catch (e) { /* deep link is best-effort; the tool works without it */ }
+})();
 </script>
 </body>
 </html>
