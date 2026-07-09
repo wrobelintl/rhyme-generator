@@ -305,6 +305,13 @@ let deepLoading = false;
 let deepError = false;
 let deepActive = false;           // per-search: user asked for deep results
 
+// Boxed "Want broader results?" prompt appears when a word has fewer than this
+// many perfect rhymes; stronger pages get a quiet one-line reveal instead
+// (same affordance as the assonance reveal). Measured tradeoff in
+// docs/DEEP_SEARCH_ARCHITECTURE.md - 8 catches love(4)/home(7) while
+// day/night/time keep an uncluttered page.
+const DEEP_CTA_THRESHOLD = 8;
+
 // Pure grammatical auxiliaries/function words suppressed from the ASSONANCE
 // tier only (they never carry line stress, so they are useless as vowel
 // mates). Real rhyme words like "one/come/done/just/must" are deliberately
@@ -829,11 +836,14 @@ function renderRhymes() {
     html += deepSectionsHtml(senses)
       || '<div class="empty" style="padding:0.75rem 0">The expanded dictionary adds nothing new for this word.</div>';
   } else {
-    // Offer Deep Search only where it earns its click: thin perfect coverage,
-    // or a pending loading/error state that needs to stay visible.
+    // Thin pages get the boxed prompt; strong pages get a quiet reveal so the
+    // deeper dictionary stays discoverable (night alone hides 40+ deep perfect
+    // rhymes) without cluttering a page that already delivered.
     const rawPerfectTotal = currentRhymes.senses.reduce(function (t, s) { return t + s.perfect.length; }, 0);
-    if (rawPerfectTotal < 8 || deepLoading || deepError) {
+    if (rawPerfectTotal < DEEP_CTA_THRESHOLD || deepLoading || deepError) {
       html += deepCtaHtml('Want broader results?');
+    } else {
+      html += '<div style="margin-top:1.1rem"><button type="button" class="linklike" onclick="deepSearch()">Search deeper dictionary (rarer words)</button></div>';
     }
   }
 

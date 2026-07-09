@@ -1,8 +1,10 @@
 # Deep Search — architecture note
 
-Status: **local prototype on branch `product/deep-search-architecture` — not shipped.**
-Task: FMR-DEEP-SEARCH-ARCHITECTURE-001. Read alongside `tools/build-rhyme-data.mjs`
-(`--deep` mode) and the `deep-data` dimension in `tools/audit-rhyme-quality.mjs`.
+Status: **refined local build on branch `product/deep-search-refine` — not shipped.**
+Tasks: FMR-DEEP-SEARCH-ARCHITECTURE-001 (prototype), FMR-DEEP-SEARCH-REFINE-001
+(proper-noun filter, CTA tuning, SOURCES.md). Read alongside
+`tools/build-rhyme-data.mjs` (`--deep` mode) and the `deep-data` dimension in
+`tools/audit-rhyme-quality.mjs`.
 
 ## What it is
 
@@ -14,7 +16,7 @@ click **Search deeper dictionary**. That click — and nothing else — fetches 
 additional same-origin static file:
 
 ```
-data/deep/rhymes-deep.min.json   (~220 KB raw / ~92 KB gzipped)
+data/deep/rhymes-deep.min.json   (~219 KB raw / ~91 KB gzipped)
 ```
 
 which extends the dictionary by **10,484 rarer words** (frequency ranks ~9.5k
@@ -71,15 +73,31 @@ than mis-joined.
 
 Sampling the actual gwordlist bands: ranks 9.5k–20k are predominantly real
 writer vocabulary (cheat, cherish, shadowy, mushroom, cynical, resilient, woe,
-sparkle, hover, dreamed) with tolerable proper-noun noise; by 30k the band
-turns name-heavy and obscure; ranks 30k–50k are corpus-tail junk (temerous,
-respeak, cabok, klenge). 20k is also what fits the 100 KB gzip shard budget:
-~92 KB gz measured. `DEEP_GZ_BUDGET` makes the builder fail rather than exceed
-it. Band curation on top of the shared filters: 3-letter deep words are
-allowlisted (`DEEP_SHORT_KEEP` — the band's 3-letter tokens are mostly
-initialisms like cia/hud/nec) and an offensive-term exclusion
-(`DEEP_OFFENSIVE`) removes the slur-adjacent hits found by sweeping the band
-(jap, retard, homo, dyke, tit, git, ...).
+sparkle, hover, dreamed); by 30k the band turns obscure; ranks 30k–50k are
+corpus-tail junk (temerous, respeak, cabok, klenge). 20k is also what fits the
+100 KB gzip shard budget: ~91 KB gz measured. `DEEP_GZ_BUDGET` makes the
+builder fail rather than exceed it.
+
+Band curation on top of the shared core filters:
+
+- **Proper-noun casing filter (refine task).** The frequency source lists each
+  word once in its corpus-dominant casing, so caps-dominant words in the deep
+  band are almost always names/places — measured at 19.4% of the unfiltered
+  band (fischer, nicaragua, eisenhower, rockefeller). They are dropped, and
+  the quota refills with lowercase-dominant words from slightly deeper ranks
+  (still well inside the junk cliff; tail eyeballed clean: crossroads, relic,
+  adversity, medallion, samurai). A hand-vetted `DEEP_CAPS_KEEP` allowlist
+  rescues ~110 dual-use words whose capitalized use dominates books but whose
+  common reading is writer gold (raven, moose, penguin, muse, ode, laurel,
+  bourbon, marathon, thyme…). Measured effect on the shipped lists: horse's
+  deep perfect went norse→concourse, time gained thyme/pantomime, people
+  gained steeple, every gained reverie, silver gained quicksilver, and the
+  name-noise in assonance tiers (fischer/dickens/truman) vanished.
+- 3-letter deep words are allowlisted (`DEEP_SHORT_KEEP` — the band's 3-letter
+  tokens are mostly initialisms like cia/hud/nec); hand-vetted allowlist words
+  bypass the casing filter by design.
+- An offensive-term exclusion (`DEEP_OFFENSIVE`) removes the slur-adjacent
+  hits found by sweeping the band (jap, retard, homo, dyke, tit, git, ...).
 
 ## Payload
 
@@ -95,9 +113,20 @@ prefetched, preloaded, or speculatively loaded.
 ## User flow
 
 1. Search "sparkle" → "This word is not in the quick dictionary." +
-   **[Search deeper dictionary]**. (Weak-result words — fewer than 8 perfect
-   rhymes — instead get "Want broader results?" + the same button. Strong
-   results get no button: no clutter where deep adds nothing.)
+   **[Search deeper dictionary]**. Weak-result words — fewer than
+   `DEEP_CTA_THRESHOLD = 8` perfect rhymes — instead get "Want broader
+   results?" + the same button. Strong pages get a **quiet one-line reveal**
+   ("Search deeper dictionary (rarer words)", the same linklike affordance as
+   the assonance reveal) instead of the boxed prompt.
+
+   Threshold decision (measured over the top-2000 words, all tiers counted):
+   every candidate threshold 4/6/8/10 gives a 100% useful click rate (the
+   assonance classes are large, so deep always adds *something*), but at ANY
+   threshold 774–1,084 strong words hide real deep perfect rhymes (night: 43,
+   day: 64, fire: 31) with no affordance at all. So the threshold stays at 8 —
+   it catches love(4)/home(7) with the boxed prompt while day/night/time stay
+   unboxed — and the quiet link closes the discoverability gap on strong pages
+   without clutter.
 2. Click → "Loading expanded dictionary…" → results under the Deep Search
    banner. Tiers stay separated: perfect / near / homophones / assonance each
    get their own labeled "Deep Search — more …" section; deep chips render in
@@ -136,17 +165,19 @@ ships — that file was out of this task's allowed edit list.)
 
 ## Test plan (implemented)
 
-- `node tools/test-rhymes.mjs` — 69 checks (14 new): extension/core build-stamp
-  match, gzip budget, structural alignment, alphabetic-only, zero core overlap,
-  id-space bounds, attribution, offensive-term sweep, merged-lookup goldens
-  ("cute" resolves and rhymes with boot/shoot-tier core words), homophone
-  leak-proofing over 200 merged homophone groups, and a measured coverage
-  assertion (deep gives ≥100 of the top-2000 zero-perfect words a real perfect
-  rhyme; currently 136/437).
-- `node tools/audit-rhyme-quality.mjs` — new hard `deep-data` dimension (18
+- `node tools/test-rhymes.mjs` — 71 checks (16 for deep): extension/core
+  build-stamp match, gzip budget, structural alignment, alphabetic-only, zero
+  core overlap, id-space bounds, attribution, offensive-term sweep,
+  proper-noun-filter spot checks (fischer/eisenhower out, moose/raven/bourbon
+  in), merged-lookup goldens ("cute" resolves and rhymes with boot/shoot-tier
+  core words), homophone leak-proofing over 200 merged homophone groups, and a
+  measured coverage assertion (deep gives ≥100 of the top-2000 zero-perfect
+  words a real perfect rhyme; currently 149/437).
+- `node tools/audit-rhyme-quality.mjs` — hard `deep-data` dimension (22
   checks): file/stamp/budget/structure/content plus UI wiring (exactly two
   same-origin fetches; deep fetch only inside `deepSearch()`; all required
-  labels and states present; deep mode resets per search).
+  labels and states present; threshold pinned at 8; quiet reveal present; deep
+  mode resets per search).
 - Browser QA (scratchpad CDP harness, kept out of the repo): 23/24 automated
   flows — default searches unchanged, no deep fetch before opt-in, single
   constant-URL fetch after, labeling, honest empties, per-search reset, chained
@@ -156,21 +187,23 @@ ships — that file was out of this task's allowed edit list.)
 
 ## Ship readiness assessment
 
-Prototype is functional and validated locally. Before shipping to production:
+Refined build is validated locally and ready for owner sign-off:
 
-1. Owner review of the deep band quality in the UI (search a dozen real words).
-2. Add the one-line deep-extension mention to `data/SOURCES.md`.
-3. Regenerate `docs/RHYME_QUALITY_BACKLOG.md` is already done in this branch;
-   keep it in the ship commit.
-4. Decide whether the "weak result" threshold (<8 perfect) shows the button too
-   often or not often enough — a taste call, cheap to tune.
+1. ~~Add the deep-extension documentation to `data/SOURCES.md`~~ — **done**
+   (refine task).
+2. ~~Tune the CTA threshold~~ — **done**: measured, kept at 8, quiet reveal
+   added for strong pages.
+3. ~~Eyeball deep band quality~~ — **done**: proper-noun casing filter removed
+   the name-noise; representative words re-reviewed clean.
+4. Owner review of the UI (search a dozen real words) — the one open item.
 5. Ship via the normal fast-forward flow, then verify live that the deep file
    returns 200, is fetched only on click (DevTools network tab), and Cloudflare
    serves it gzipped/brotli.
 
-Known limitations (deliberate): proper nouns in the deep band are filtered only
-by the short-word allowlist, not exhaustively (fischer/rotterdam-type words
-remain — real words, honestly labeled as rarer); syllable filters apply to deep
+Known limitations (deliberate): a few dual-use caps-dominant words not on the
+rescue list are absent from the deep band (a missing rare word, never junk);
+clinical vocabulary appears in some assonance tiers (urea, epithelium — real
+words, honestly labeled as rarer, capped at 12); syllable filters apply to deep
 chips but deep words aren't in the syllable toolbar's count badges; the deep
 file has no content-hash filename (matches the core file's convention — the
 build-stamp check protects against stale-cache mis-joins).

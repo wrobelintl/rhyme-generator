@@ -348,6 +348,14 @@ for (const w of CASES.familySafety.mustBeAbsent) {
         'jap', 'retard', 'homo', 'dyke', 'git', 'tit', 'coon', 'gook', 'twat'];
       const vhits = vulgar.filter(x => DP.w.includes(x));
       check(dim, true, vhits.length === 0, `deep profanity/offensive sweep clean${vhits.length ? ' (' + vhits.join(',') + ')' : ''}`);
+      // proper-noun casing filter: caps-dominant names stay out; hand-vetted
+      // dual-use words stay in (spot checks against the measured band).
+      const names = ['fischer', 'eisenhower', 'nicaragua', 'rockefeller', 'nietzsche', 'johannesburg'];
+      const nhits = names.filter(x => DP.w.includes(x));
+      check(dim, true, nhits.length === 0, `deep proper-noun filter holding${nhits.length ? ' (' + nhits.join(',') + ')' : ''}`);
+      const rescues = ['moose', 'raven', 'penguin', 'muse', 'marathon', 'bourbon'];
+      const rmiss = rescues.filter(x => !DP.w.includes(x));
+      check(dim, true, rmiss.length === 0, `dual-use caps rescues present${rmiss.length ? ' (missing: ' + rmiss.join(',') + ')' : ''}`);
       check(dim, true, /carnegie mellon/i.test(DP._m.attribution || '') && /ngram/i.test(DP._m.attribution || ''),
         'deep attribution names CMU and Google Books Ngram');
     }
@@ -366,6 +374,10 @@ for (const w of CASES.familySafety.mustBeAbsent) {
   check(dim, true, script.includes('This word is not in the quick dictionary'),
     'unknown-word copy present: "This word is not in the quick dictionary"');
   check(dim, true, script.includes('Want broader results?'), 'weak-result copy present: "Want broader results?"');
+  check(dim, true, script.includes('const DEEP_CTA_THRESHOLD = 8'),
+    'boxed-CTA threshold pinned at 8 (docs/DEEP_SEARCH_ARCHITECTURE.md)');
+  check(dim, true, script.includes('Search deeper dictionary (rarer words)'),
+    'strong pages get the quiet linklike reveal (no boxed clutter)');
   check(dim, true, script.includes('Loading expanded dictionary…'), 'loading copy present');
   check(dim, true, script.includes('Deep Search</strong> — expanded dictionary. These results may include rarer words.'),
     'deep results banner carries the required labels');

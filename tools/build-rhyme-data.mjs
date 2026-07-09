@@ -188,23 +188,31 @@ function parseCmudict(text) {
 }
 
 // Parse gwordlist frequency-alpha-alldicts.txt: "#RANKING WORD COUNT PERCENT CUMULATIVE".
+// The source lists each word ONCE in its corpus-dominant casing ("the" but
+// "Rhodes"), so casing is a reliable proper-noun signal: lowerSeen holds words
+// whose dominant form is lowercase. The core build ignores it (byte-identical
+// output); the deep build uses it to keep names/places out of the rarer band.
 function parseFreq(text) {
   const ranked = [];
+  const lowerSeen = new Set();
   for (const line of text.split('\n')) {
     if (!line || line.startsWith('#')) continue;
     const cols = line.trim().split(/\s+/);
     if (cols.length < 2) continue;
-    const word = cols[1].toLowerCase();
-    if (/^[a-z]+$/.test(word)) ranked.push(word);
+    const orig = cols[1];
+    const word = orig.toLowerCase();
+    if (!/^[a-z]+$/.test(word)) continue;
+    ranked.push(word);
+    if (orig === word) lowerSeen.add(word);
   }
-  return ranked;
+  return { ranked, lowerSeen };
 }
 
 async function main() {
   console.error('fetching CMUdict + gwordlist frequency data...');
   const [cmuText, freqText] = await Promise.all([fetchText(CMUDICT_URL), fetchText(FREQ_URL)]);
   const cmu = parseCmudict(cmuText);
-  const ranked = parseFreq(freqText);
+  const { ranked } = parseFreq(freqText);
   console.error(`parsed cmudict words=${cmu.size} freq-ranked words=${ranked.length}`);
 
   const rank = new Map();
@@ -348,6 +356,27 @@ const DEEP_SHORT_KEEP = new Set(['sol','bot','hog','oft','nil','yen','spy','bro'
 const DEEP_OFFENSIVE = new Set(['jap','japs','retard','retards','homo','homos','dyke','dykes',
   'tit','git','coon','coons','gook','gooks','negro','negroes','fag','fags','twat','wank']);
 
+// Proper-noun control: the frequency source lists each word in its
+// corpus-DOMINANT casing, so a capitalized-dominant word in the deep band is
+// almost always a name or place (fischer, nicaragua, eisenhower — measured
+// 19.4% of the unfiltered band). Those are dropped. This allowlist rescues the
+// dual-use words whose capitalized use dominates books but whose common-noun/
+// adjective reading is exactly what a writer wants (raven, moose, bourbon,
+// marathon, the -ology nouns...). Hand-vetted against the actual drop list.
+const DEEP_CAPS_KEEP = new Set(['rabbi','ruby','mead','derby','cove','holly','raven','laurel',
+  'crescent','penguin','beacon','muse','colt','sparrow','moose','falcon','peacock','jade',
+  'empress','pilgrim','squire','viscount','savior','messiah','pharaoh','guru','grandma','daisy',
+  'hazel','heather','marina','aurora','vale','moor','loch','alto','amen','yankee','ranger',
+  'explorer','courier','sentinel','archer','piper','tanner','brewer','curator','deacon','ensign',
+  'commodore','intern','jubilee','marathon','concerto','quartet','epistle','glossary','foreword',
+  'yearbook','almanac','lemma','isthmus','archipelago','infirmary','inquisition','baroque',
+  'bourbon','cola','curry','chili','sherry','bowling','rugby','polo','garland','lotus','redwood',
+  'aspen','valentine','bunker','mesa','vista','butte','finch','crook','moody','wheeling','belle',
+  'rouge','bland','twas','kitty','teddy','grange','scout','viola','wherefore','chairperson',
+  'luckily','ironically','interestingly','zoology','pharmacology','radiology','neurology',
+  'toxicology','microbiology','entomology','meteorology','oceanography','epidemiology',
+  'immunology','metallurgy','pediatrics','obstetrics','mart']);
+
 async function buildDeep() {
   const core = JSON.parse(readFileSync('data/rhymes.min.json', 'utf8'));
   console.error(`core: words=${core.w.length} groups=${core.n.length} (committed file is left untouched)`);
@@ -355,7 +384,7 @@ async function buildDeep() {
   console.error('fetching CMUdict + gwordlist frequency data...');
   const [cmuText, freqText] = await Promise.all([fetchText(CMUDICT_URL), fetchText(FREQ_URL)]);
   const cmu = parseCmudict(cmuText);
-  const ranked = parseFreq(freqText);
+  const { ranked, lowerSeen } = parseFreq(freqText);
 
   // --- reconstruct the committed id spaces from core + sources (drift guards) ---
   const pk2gid = new Map();   // perfect key -> committed group id
@@ -414,9 +443,13 @@ async function buildDeep() {
   console.error(`id spaces reconstructed: ${pk2gid.size} groups, ${nk2nid.size} near keys, ${ak2aid.size} assonance classes, 0 conflicts`);
 
   // --- pick the deep band: next eligible ranked words after the core set ---
+  // Hand-vetted words (the short-word and caps-rescue allowlists) bypass the
+  // proper-noun casing filter — that is what "hand-vetted" means here.
   const coreSet = new Set(core.w);
+  const handVetted = w => TWO_LETTER_REAL.has(w) || DEEP_SHORT_KEEP.has(w) || DEEP_CAPS_KEEP.has(w);
   const okWord = w =>
     (w.length >= 4 || TWO_LETTER_REAL.has(w) || DEEP_SHORT_KEEP.has(w)) &&
+    (lowerSeen.has(w) || handVetted(w)) &&
     !STOP.has(w) && !PROFANITY.has(w) && !DEEP_OFFENSIVE.has(w) &&
     cmu.has(w) && !coreSet.has(w);
   const deepWords = [];

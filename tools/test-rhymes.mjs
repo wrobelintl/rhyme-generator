@@ -203,6 +203,10 @@ ok(some(dayS.sonic, ['made', 'state', 'name', 'place', 'take']), 'day assonance 
   const vulgar = ['fuck', 'shit', 'cunt', 'bitch', 'nigger', 'faggot', 'whore', 'slut',
     'jap', 'retard', 'homo', 'dyke', 'git', 'tit', 'coon', 'gook', 'twat'];
   ok(vulgar.every(x => !DP.w.includes(x)), 'deep: profanity/offensive-term sweep clean');
+  const properNouns = ['fischer', 'eisenhower', 'nicaragua', 'rockefeller', 'nietzsche', 'johannesburg'];
+  ok(properNouns.every(x => !DP.w.includes(x)), 'deep: caps-dominant proper nouns filtered out');
+  const capsRescues = ['moose', 'raven', 'penguin', 'muse', 'marathon', 'bourbon'];
+  ok(capsRescues.every(x => DP.w.includes(x)), 'deep: hand-vetted dual-use words survive the caps filter');
 
   // merged structures, exactly as the client builds them
   const coreLen = D.w.length;
